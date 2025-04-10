@@ -1,0 +1,925 @@
+Detailed Implementation Plan for Streamlit Product Generator App
+Based on the requirements, I'll provide a comprehensive plan for creating the product generator app with all the requested features. Let's break this down into manageable steps:
+
+1. Project Structure and Setup
+First, let's establish a clear folder structure for the project:
+
+Code
+product_generator_app/
+├── app.py                  # Main entry point
+├── config.py               # Configuration settings
+├── requirements.txt        # Dependencies
+├── .gitignore              # Git ignore file
+├── .env                    # Environment variables (not committed to git)
+├── assets/                 # Static assets
+│   └── logo.png            # App logo
+├── data/                   # Data files
+├── database/               # Database scripts
+│   ├── db_manager.py       # Database operations
+│   └── models.py           # Database models
+├── images/                 # Stored images from API
+├── pages/                  # Streamlit pages
+│   ├── __init__.py
+│   ├── 1_🏠_Home.py
+│   ├── 2_➕_Add_Product.py
+│   ├── 3_📋_Product_List.py
+│   └── 4_📤_Export.py
+└── utils/                  # Utility functions
+    ├── __init__.py
+    ├── api_handler.py      # DynamicMockups API integration
+    ├── auth.py             # Authentication logic
+    ├── csv_export.py       # CSV export functionality
+    └── image_handler.py    # Image processing utils
+Dependencies (requirements.txt)
+Code
+streamlit==1.22.0
+mysql-connector-python==8.0.28
+pandas==1.4.2
+requests==2.27.1
+python-dotenv==0.20.0
+pillow==9.1.1
+streamlit-authenticator==0.1.5
+2. Database Setup
+MySQL Database Schema
+First, we'll create the database and table:
+
+SQL
+CREATE DATABASE product_generator;
+USE product_generator;
+
+CREATE TABLE products (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    product_name VARCHAR(255) NOT NULL,
+    item_sku VARCHAR(100) NOT NULL,
+    parent_child ENUM('Parent', 'Child') NOT NULL,
+    parent_sku VARCHAR(100),
+    size VARCHAR(100),
+    color VARCHAR(50),
+    image_url TEXT,
+    marketplace_title TEXT,
+    category VARCHAR(100),
+    tax_class VARCHAR(100),
+    quantity INT NOT NULL DEFAULT 0,
+    price DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE users (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    email VARCHAR(255) NOT NULL UNIQUE,
+    password VARCHAR(255) NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Insert default user
+INSERT INTO users (email, password) VALUES ('admin@example.com', 'password123');
+Database Manager (database/db_manager.py)
+Python
+import mysql.connector
+from mysql.connector import Error
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+class DatabaseManager:
+    def __init__(self):
+        self.connection = None
+        self.connect()
+        
+    def connect(self):
+        try:
+            self.connection = mysql.connector.connect(
+                host=os.getenv('DB_HOST', 'localhost'),
+                user=os.getenv('DB_USER', 'root'),
+                password=os.getenv('DB_PASSWORD', ''),
+                database=os.getenv('DB_NAME', 'product_generator')
+            )
+            print("MySQL connection is established.")
+        except Error as e:
+            print(f"Error connecting to MySQL: {e}")
+    
+    def execute_query(self, query, params=None):
+        cursor = self.connection.cursor()
+        try:
+            cursor.execute(query, params or ())
+            self.connection.commit()
+            return cursor
+        except Error as e:
+            print(f"Error executing query: {e}")
+            return None
+        
+    def fetch_all(self, query, params=None):
+        cursor = self.execute_query(query, params)
+        if cursor:
+            result = cursor.fetchall()
+            column_names = [desc[0] for desc in cursor.description]
+            cursor.close()
+            return result, column_names
+        return [], []
+    
+    def fetch_one(self, query, params=None):
+        cursor = self.execute_query(query, params)
+        if cursor:
+            result = cursor.fetchone()
+            column_names = [desc[0] for desc in cursor.description]
+            cursor.close()
+            if result:
+                return dict(zip(column_names, result))
+        return None
+    
+    def insert_product(self, product_data):
+        query = """
+        INSERT INTO products (
+            product_name, item_sku, parent_child, parent_sku, 
+            size, color, image_url, marketplace_title, 
+            category, tax_class, quantity, price
+        ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """
+        params = (
+            product_data['product_name'], product_data['item_sku'],
+            product_data['parent_child'], product_data['parent_sku'],
+            product_data['size'], product_data['color'],
+            product_data['image_url'], product_data['marketplace_title'],
+            product_data['category'], product_data['tax_class'],
+            product_data['quantity'], product_data['price']
+        )
+        cursor = self.execute_query(query, params)
+        if cursor:
+            product_id = cursor.lastrowid
+            cursor.close()
+            return product_id
+        return None
+    
+    def get_all_products(self):
+        query = "SELECT * FROM products ORDER BY created_at DESC"
+        return self.fetch_all(query)
+    
+    def get_product(self, product_id):
+        query = "SELECT * FROM products WHERE id = %s"
+        return self.fetch_one(query, (product_id,))
+    
+    def update_product(self, product_id, product_data):
+        query = """
+        UPDATE products SET
+            product_name = %s, item_sku = %s, parent_child = %s, parent_sku = %s,
+            size = %s, color = %s, image_url = %s, marketplace_title = %s,
+            category = %s, tax_class = %s, quantity = %s, price = %s
+        WHERE id = %s
+        """
+        params = (
+            product_data['product_name'], product_data['item_sku'],
+            product_data['parent_child'], product_data['parent_sku'],
+            product_data['size'], product_data['color'],
+            product_data['image_url'], product_data['marketplace_title'],
+            product_data['category'], product_data['tax_class'],
+            product_data['quantity'], product_data['price'],
+            product_id
+        )
+        cursor = self.execute_query(query, params)
+        if cursor:
+            cursor.close()
+            return True
+        return False
+    
+    def delete_product(self, product_id):
+        query = "DELETE FROM products WHERE id = %s"
+        cursor = self.execute_query(query, (product_id,))
+        if cursor:
+            cursor.close()
+            return True
+        return False
+        
+    def validate_user(self, email, password):
+        query = "SELECT id FROM users WHERE email = %s AND password = %s"
+        result = self.fetch_one(query, (email, password))
+        return result is not None
+3. Authentication System (utils/auth.py)
+We'll implement a simple authentication system for the single user:
+
+Python
+import streamlit as st
+from database.db_manager import DatabaseManager
+
+class Authentication:
+    def __init__(self):
+        self.db = DatabaseManager()
+    
+    def login(self, email, password):
+        # Check if user exists and password matches
+        return self.db.validate_user(email, password)
+    
+    def is_authenticated(self):
+        return 'authenticated' in st.session_state and st.session_state['authenticated']
+    
+    def check_authentication(self):
+        if not self.is_authenticated():
+            st.warning("Please login to access this page.")
+            st.stop()
+
+def login_page():
+    st.title("Product Generator - Login")
+    
+    auth = Authentication()
+    
+    # Check if already authenticated
+    if auth.is_authenticated():
+        st.success("You are already logged in!")
+        return
+    
+    with st.form("login_form"):
+        email = st.text_input("Email")
+        password = st.text_input("Password", type="password")
+        submit = st.form_submit_button("Login")
+        
+        if submit:
+            if auth.login(email, password):
+                st.session_state['authenticated'] = True
+                st.success("Login successful!")
+                st.experimental_rerun()
+            else:
+                st.error("Invalid email or password")
+
+def logout():
+    if 'authenticated' in st.session_state:
+        del st.session_state['authenticated']
+    st.success("Logged out successfully!")
+    st.experimental_rerun()
+4. DynamicMockups API Integration (utils/api_handler.py)
+Python
+import requests
+import os
+import json
+from dotenv import load_dotenv
+
+load_dotenv()
+
+class DynamicMockupsAPI:
+    def __init__(self):
+        self.api_key = os.getenv("DYNAMIC_MOCKUPS_API_KEY")
+        self.base_url = "https://api.dynamicmockups.com/v1"
+        
+    def generate_mockup(self, image_path, template_id="t-shirt"):
+        """
+        Generates a mockup using the DynamicMockups API
+        
+        Args:
+            image_path (str): Path to the image file
+            template_id (str): ID of the template to use
+            
+        Returns:
+            dict: Response from the API or None if failed
+        """
+        if not self.api_key:
+            raise ValueError("API key not found. Set DYNAMIC_MOCKUPS_API_KEY in .env file.")
+        
+        # Prepare the API request
+        url = f"{self.base_url}/mockups"
+        
+        # Read the image file
+        try:
+            with open(image_path, 'rb') as image_file:
+                files = {'image': image_file}
+                data = {'template_id': template_id}
+                
+                headers = {
+                    'Authorization': f'Bearer {self.api_key}'
+                }
+                
+                # Make the API request
+                response = requests.post(
+                    url, 
+                    files=files,
+                    data=data,
+                    headers=headers
+                )
+                
+                if response.status_code == 200:
+                    return response.json()
+                else:
+                    print(f"API Error: {response.status_code}")
+                    print(response.text)
+                    return None
+                
+        except Exception as e:
+            print(f"Error sending API request: {e}")
+            return None
+5. Image Storage Handling (utils/image_handler.py)
+Python
+import os
+import requests
+from PIL import Image
+import uuid
+import streamlit as st
+
+# Define the base directory for storing images
+IMAGE_DIR = "images"
+
+def ensure_image_dir():
+    """Ensure the image directory exists"""
+    if not os.path.exists(IMAGE_DIR):
+        os.makedirs(IMAGE_DIR)
+
+def save_uploaded_image(uploaded_file):
+    """
+    Save an uploaded image to disk
+    
+    Args:
+        uploaded_file: Streamlit uploaded file object
+        
+    Returns:
+        str: Path to the saved image
+    """
+    ensure_image_dir()
+    
+    # Generate a unique filename
+    file_extension = os.path.splitext(uploaded_file.name)[1]
+    filename = f"{uuid.uuid4()}{file_extension}"
+    save_path = os.path.join(IMAGE_DIR, filename)
+    
+    # Save the file
+    with open(save_path, "wb") as f:
+        f.write(uploaded_file.getbuffer())
+        
+    return save_path
+
+def save_api_image(image_url, prefix="mockup_"):
+    """
+    Save an image from API response URL to disk
+    
+    Args:
+        image_url: URL of the image to download
+        prefix: Prefix for the filename
+        
+    Returns:
+        str: Path to the saved image
+    """
+    ensure_image_dir()
+    
+    # Generate a unique filename
+    filename = f"{prefix}{uuid.uuid4()}.jpg"
+    save_path = os.path.join(IMAGE_DIR, filename)
+    
+    # Download and save the image
+    response = requests.get(image_url)
+    if response.status_code == 200:
+        with open(save_path, "wb") as f:
+            f.write(response.content)
+        return save_path
+    return None
+
+def get_image_path(relative_path):
+    """Convert a relative image path to a full path"""
+    return os.path.join(os.path.dirname(os.path.dirname(__file__)), relative_path)
+6. CSV Export Functionality (utils/csv_export.py)
+Python
+import pandas as pd
+import streamlit as st
+
+def export_products_to_csv(products, columns):
+    """
+    Export products to CSV file with specific format
+    
+    Args:
+        products: List of product dictionaries
+        columns: Column names
+        
+    Returns:
+        bytes: CSV file content as bytes
+    """
+    # Convert products to DataFrame
+    df = pd.DataFrame(products, columns=columns)
+    
+    # Rename columns to match the required format
+    column_mapping = {
+        'product_name': 'Product Name',
+        'item_sku': 'Item SKU',
+        'parent_child': 'Parent/Child',
+        'parent_sku': 'Parent SKU',
+        'size': 'Size',
+        'color': 'Colour',
+        'image_url': 'Image URL',
+        'marketplace_title': 'Marketplace Title',
+        'category': 'Woocommerce Product Category',
+        'tax_class': 'Tax Class',
+        'quantity': 'Qty',
+        'price': 'Price'
+    }
+    
+    df = df.rename(columns=column_mapping)
+    
+    # Reorder columns to match the required format
+    ordered_columns = [
+        'Product Name', 'Item SKU', 'Parent/Child', 'Parent SKU',
+        'Size', 'Colour', 'Image URL', 'Marketplace Title',
+        'Woocommerce Product Category', 'Tax Class', 'Qty', 'Price'
+    ]
+    
+    # Make sure we only include columns that exist in the DataFrame
+    valid_columns = [col for col in ordered_columns if col in df.columns]
+    df = df[valid_columns]
+    
+    # Convert DataFrame to CSV
+    return df.to_csv(index=False).encode('utf-8')
+7. Main App and Pages
+Configuration (config.py)
+Python
+import os
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
+
+# Database configuration
+DB_CONFIG = {
+    'host': os.getenv('DB_HOST', 'localhost'),
+    'user': os.getenv('DB_USER', 'root'),
+    'password': os.getenv('DB_PASSWORD', ''),
+    'database': os.getenv('DB_NAME', 'product_generator')
+}
+
+# API configuration
+API_CONFIG = {
+    'api_key': os.getenv('DYNAMIC_MOCKUPS_API_KEY', ''),
+    'base_url': 'https://api.dynamicmockups.com/v1'
+}
+
+# App configuration
+APP_CONFIG = {
+    'title': 'Product Generator',
+    'favicon': 'assets/logo.png',
+    'image_dir': 'images'
+}
+
+# Default credentials (only for development)
+DEFAULT_CREDENTIALS = {
+    'email': 'admin@example.com',
+    'password': 'password123'
+}
+Main App Entry Point (app.py)
+Python
+import streamlit as st
+from utils.auth import Authentication, login_page, logout
+from config import APP_CONFIG
+
+st.set_page_config(
+    page_title=APP_CONFIG['title'],
+    page_icon=APP_CONFIG['favicon'],
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# Initialize authentication
+auth = Authentication()
+
+# Check if user is authenticated
+if not auth.is_authenticated():
+    login_page()
+else:
+    # Show logout button in sidebar
+    if st.sidebar.button("Logout"):
+        logout()
+    
+    # Main app content
+    st.title(APP_CONFIG['title'])
+    st.write("Welcome to the Product Generator App!")
+    
+    st.markdown("""
+    ## Available Pages:
+    
+    1. **Home** - This page
+    2. **Add Product** - Create new products and generate mockups
+    3. **Product List** - View and manage your products
+    4. **Export** - Export your products to CSV
+    
+    Use the sidebar to navigate between pages.
+    """)
+Home Page (pages/1_🏠_Home.py)
+Python
+import streamlit as st
+from utils.auth import Authentication
+
+# Initialize authentication
+auth = Authentication()
+
+# Check authentication before showing page
+auth.check_authentication()
+
+st.title("🏠 Home")
+
+st.markdown("""
+# Welcome to the Product Generator App
+
+This application allows you to:
+
+1. Generate product mockups using the DynamicMockups API
+2. Store product information in a database
+3. Export product data to CSV format
+
+## Getting Started
+
+- **Add Product**: Create new products and generate mockups
+- **Product List**: View and manage your existing products
+- **Export**: Export your product data to CSV format
+
+Use the sidebar to navigate between pages.
+""")
+
+# Show some statistics
+st.subheader("Statistics")
+
+# Example placeholders
+col1, col2, col3 = st.columns(3)
+with col1:
+    st.metric("Total Products", "0")
+with col2:
+    st.metric("API Calls Saved", "0")
+with col3:
+    st.metric("Images Stored", "0")
+Add Product Page (pages/2_➕_Add_Product.py)
+Python
+import streamlit as st
+import os
+from utils.auth import Authentication
+from database.db_manager import DatabaseManager
+from utils.api_handler import DynamicMockupsAPI
+from utils.image_handler import save_uploaded_image, save_api_image
+
+# Initialize authentication
+auth = Authentication()
+
+# Check authentication before showing page
+auth.check_authentication()
+
+st.title("➕ Add Product")
+
+# Initialize database connection
+db = DatabaseManager()
+
+# Initialize API handler
+api = DynamicMockupsAPI()
+
+with st.form("product_form"):
+    st.subheader("Product Information")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        product_name = st.text_input("Product Name*")
+        item_sku = st.text_input("Item SKU*")
+        parent_child = st.selectbox("Parent/Child*", ["Parent", "Child"])
+        parent_sku = st.text_input("Parent SKU", help="Required if Parent/Child is Child")
+        size = st.text_input("Size")
+        color = st.text_input("Color")
+    
+    with col2:
+        marketplace_title = st.text_area("Marketplace Title")
+        category = st.text_input("Product Category")
+        tax_class = st.text_input("Tax Class")
+        quantity = st.number_input("Quantity*", min_value=0, value=1)
+        price = st.number_input("Price*", min_value=0.0, value=0.0, format="%.2f")
+    
+    st.subheader("Product Image")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        uploaded_file = st.file_uploader("Upload Product Image", type=["png", "jpg", "jpeg"])
+    
+    with col2:
+        template_id = st.selectbox(
+            "Select Template for Mockup",
+            ["t-shirt", "hoodie", "mug", "poster", "phone-case"]
+        )
+    
+    submit = st.form_submit_button("Create Product")
+    
+    if submit:
+        # Validate required fields
+        if not product_name or not item_sku or not parent_child:
+            st.error("Please fill in all required fields")
+        elif parent_child == "Child" and not parent_sku:
+            st.error("Parent SKU is required for Child products")
+        else:
+            # Handle file upload
+            image_path = None
+            mockup_url = None
+            
+            if uploaded_file:
+                with st.spinner("Processing image..."):
+                    # Save the uploaded image
+                    image_path = save_uploaded_image(uploaded_file)
+                    
+                    # Generate mockup using API
+                    st.info("Generating mockup using DynamicMockups API...")
+                    mockup_response = api.generate_mockup(image_path, template_id)
+                    
+                    if mockup_response and 'mockup_url' in mockup_response:
+                        mockup_url = mockup_response['mockup_url']
+                        # Save the mockup image locally
+                        local_mockup_path = save_api_image(mockup_url)
+                        
+                        if local_mockup_path:
+                            # Show the mockup
+                            st.success("Mockup generated successfully!")
+                            st.image(local_mockup_path, caption="Generated Mockup")
+                            
+                            # Convert to relative path for database storage
+                            mockup_url = os.path.relpath(local_mockup_path, start=os.path.dirname(os.path.dirname(__file__)))
+                    else:
+                        st.error("Failed to generate mockup. Please try again.")
+            
+            # Prepare product data
+            product_data = {
+                'product_name': product_name,
+                'item_sku': item_sku,
+                'parent_child': parent_child,
+                'parent_sku': parent_sku,
+                'size': size,
+                'color': color,
+                'image_url': mockup_url,
+                'marketplace_title': marketplace_title,
+                'category': category,
+                'tax_class': tax_class,
+                'quantity': quantity,
+                'price': price
+            }
+            
+            # Save product to database
+            product_id = db.insert_product(product_data)
+            
+            if product_id:
+                st.success(f"Product created successfully with ID: {product_id}")
+            else:
+                st.error("Failed to save product. Please try again.")
+Product List Page (pages/3_📋_Product_List.py)
+Python
+import streamlit as st
+import pandas as pd
+from utils.auth import Authentication
+from database.db_manager import DatabaseManager
+import os
+
+# Initialize authentication
+auth = Authentication()
+
+# Check authentication before showing page
+auth.check_authentication()
+
+st.title("📋 Product List")
+
+# Initialize database connection
+db = DatabaseManager()
+
+# Get all products from database
+products, column_names = db.get_all_products()
+
+if not products:
+    st.info("No products found. Add some products first.")
+else:
+    # Convert to DataFrame for display
+    df = pd.DataFrame(products, columns=column_names)
+    
+    # Add actions column
+    df['Actions'] = None
+    
+    # Display products in table
+    st.dataframe(df[['id', 'product_name', 'item_sku', 'parent_child', 'price', 'quantity']])
+    
+    # Product details section
+    st.subheader("Product Details")
+    
+    # Select a product to view/edit
+    selected_product_id = st.selectbox("Select a product to view/edit", df['id'].tolist())
+    
+    if selected_product_id:
+        product = db.get_product(selected_product_id)
+        
+        if product:
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.subheader(product['product_name'])
+                st.write(f"SKU: {product['item_sku']}")
+                st.write(f"Parent/Child: {product['parent_child']}")
+                if product['parent_child'] == 'Child':
+                    st.write(f"Parent SKU: {product['parent_sku']}")
+                st.write(f"Size: {product['size']}")
+                st.write(f"Color: {product['color']}")
+                st.write(f"Category: {product['category']}")
+                st.write(f"Tax Class: {product['tax_class']}")
+                st.write(f"Quantity: {product['quantity']}")
+                st.write(f"Price: ${product['price']}")
+            
+            with col2:
+                if product['image_url']:
+                    image_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), product['image_url'])
+                    st.image(image_path, caption=f"Mockup for {product['product_name']}")
+                else:
+                    st.info("No image available")
+            
+            # Edit and delete buttons
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                if st.button("Edit Product"):
+                    st.session_state['edit_product_id'] = selected_product_id
+                    st.session_state['edit_product_data'] = product
+                    st.experimental_rerun()
+                    
+            with col2:
+                if st.button("Delete Product"):
+                    if db.delete_product(selected_product_id):
+                        st.success("Product deleted successfully")
+                        st.experimental_rerun()
+                    else:
+                        st.error("Failed to delete product")
+    
+    # Edit product form (only show if editing)
+    if 'edit_product_id' in st.session_state and 'edit_product_data' in st.session_state:
+        st.subheader(f"Edit Product: {st.session_state['edit_product_data']['product_name']}")
+        
+        with st.form("edit_product_form"):
+            product = st.session_state['edit_product_data']
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                product_name = st.text_input("Product Name*", value=product['product_name'])
+                item_sku = st.text_input("Item SKU*", value=product['item_sku'])
+                parent_child = st.selectbox("Parent/Child*", ["Parent", "Child"], index=0 if product['parent_child'] == "Parent" else 1)
+                parent_sku = st.text_input("Parent SKU", value=product['parent_sku'] or "")
+                size = st.text_input("Size", value=product['size'] or "")
+                color = st.text_input("Color", value=product['color'] or "")
+            
+            with col2:
+                marketplace_title = st.text_area("Marketplace Title", value=product['marketplace_title'] or "")
+                category = st.text_input("Product Category", value=product['category'] or "")
+                tax_class = st.text_input("Tax Class", value=product['tax_class'] or "")
+                quantity = st.number_input("Quantity*", min_value=0, value=product['quantity'])
+                price = st.number_input("Price*", min_value=0.0, value=float(product['price']), format="%.2f")
+            
+            update = st.form_submit_button("Update Product")
+            cancel = st.form_submit_button("Cancel")
+            
+            if update:
+                # Validate required fields
+                if not product_name or not item_sku or not parent_child:
+                    st.error("Please fill in all required fields")
+                elif parent_child == "Child" and not parent_sku:
+                    st.error("Parent SKU is required for Child products")
+                else:
+                    # Prepare updated product data
+                    updated_product = {
+                        'product_name': product_name,
+                        'item_sku': item_sku,
+                        'parent_child': parent_child,
+                        'parent_sku': parent_sku,
+                        'size': size,
+                        'color': color,
+                        'image_url': product['image_url'],  # Keep the original image URL
+                        'marketplace_title': marketplace_title,
+                        'category': category,
+                        'tax_class': tax_class,
+                        'quantity': quantity,
+                        'price': price
+                    }
+                    
+                    if db.update_product(st.session_state['edit_product_id'], updated_product):
+                        st.success("Product updated successfully")
+                        # Clear the edit state
+                        del st.session_state['edit_product_id']
+                        del st.session_state['edit_product_data']
+                        st.experimental_rerun()
+                    else:
+                        st.error("Failed to update product")
+            
+            if cancel:
+                # Clear the edit state
+                del st.session_state['edit_product_id']
+                del st.session_state['edit_product_data']
+                st.experimental_rerun()
+Export Page (pages/4_📤_Export.py)
+Python
+import streamlit as st
+import pandas as pd
+from utils.auth import Authentication
+from database.db_manager import DatabaseManager
+from utils.csv_export import export_products_to_csv
+import datetime
+
+# Initialize authentication
+auth = Authentication()
+
+# Check authentication before showing page
+auth.check_authentication()
+
+st.title("📤 Export Products")
+
+# Initialize database connection
+db = DatabaseManager()
+
+# Get all products from database
+products, column_names = db.get_all_products()
+
+if not products:
+    st.info("No products found. Add some products first.")
+else:
+    st.subheader("Export Options")
+    
+    # Convert to DataFrame for filtering and display
+    df = pd.DataFrame(products, columns=column_names)
+    
+    # Filter options
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        filter_by = st.selectbox(
+            "Filter by",
+            ["All Products", "Parent SKU", "Category", "Created Date"]
+        )
+    
+    filtered_df = df.copy()
+    
+    if filter_by == "Parent SKU":
+        parent_skus = ["All"] + sorted(filtered_df['parent_sku'].dropna().unique().tolist())
+        selected_parent_sku = st.selectbox("Select Parent SKU", parent_skus)
+        
+        if selected_parent_sku != "All":
+            filtered_df = filtered_df[filtered_df['parent_sku'] == selected_parent_sku]
+    
+    elif filter_by == "Category":
+        categories = ["All"] + sorted(filtered_df['category'].dropna().unique().tolist())
+        selected_category = st.selectbox("Select Category", categories)
+        
+        if selected_category != "All":
+            filtered_df = filtered_df[filtered_df['category'] == selected_category]
+    
+    elif filter_by == "Created Date":
+        min_date = pd.to_datetime(df['created_at']).min().date()
+        max_date = pd.to_datetime(df['created_at']).max().date()
+        
+        start_date = st.date_input("Start Date", min_date)
+        end_date = st.date_input("End Date", max_date)
+        
+        if start_date and end_date:
+            filtered_df = filtered_df[
+                (pd.to_datetime(filtered_df['created_at']).dt.date >= start_date) & 
+                (pd.to_datetime(filtered_df['created_at']).dt.date <= end_date)
+            ]
+    
+    # Preview data
+    st.subheader("Preview Data")
+    st.dataframe(filtered_df[['id', 'product_name', 'item_sku', 'parent_child', 'price', 'created_at']])
+    
+    # Export button
+    if len(filtered_df) > 0:
+        # Prepare export data
+        export_data = filtered_df.to_dict('records')
+        
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        csv_filename = f"product_export_{timestamp}.csv"
+        
+        csv = export_products_to_csv(export_data, filtered_df.columns)
+        
+        st.download_button(
+            label="Export to CSV",
+            data=csv,
+            file_name=csv_filename,
+            mime="text/csv",
+        )
+        
+        st.success(f"Ready to export {len(filtered_df)} products")
+    else:
+        st.warning("No products match the selected filters")
+8. Deployment
+For deployment on Railway or Render, we'll need to create the following files:
+
+Dockerfile
+Code
+FROM python:3.9-slim
+
+WORKDIR /app
+
+COPY requirements.txt .
+
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+EXPOSE 8501
+
+CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+.env.example
+Code
+# Database Configuration
+DB_HOST=localhost
+DB_USER=root
+DB_PASSWORD=password
+DB_NAME=product_generator
+
+# API Configuration
+DYNAMIC_MOCKUPS_API_KEY=your_api_key_here
+
+# App Configuration
+APP_NAME=Product Generator
