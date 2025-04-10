@@ -1,0 +1,52 @@
+version: '3.8'
+
+services:
+  # MySQL database service
+  db:
+    image: mysql:8.0
+    container_name: product_generator_db
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: product_generator
+      MYSQL_USER: pguser
+      MYSQL_PASSWORD: pgpassword
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./db_init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p$$MYSQL_ROOT_PASSWORD"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # # Application service
+  # app:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile
+  #   container_name: product_generator_app
+  #   restart: always
+  #   depends_on:
+  #     db:
+  #       condition: service_healthy
+  #   environment:
+  #     - DB_HOST=db
+  #     - DB_USER=pguser
+  #     - DB_PASSWORD=pgpassword
+  #     - DB_NAME=product_generator
+  #     - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+  #     - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+  #     - AWS_REGION=${AWS_REGION}
+  #     - S3_BUCKET_NAME=${S3_BUCKET_NAME}
+  #     - DYNAMIC_MOCKUPS_API_KEY=${DYNAMIC_MOCKUPS_API_KEY}
+  #   ports:
+  #     - "8501:8501"
+  #   volumes:
+  #     - ./images:/app/images
+  #   command: streamlit run app.py
+
+volumes:
+  mysql_data:
