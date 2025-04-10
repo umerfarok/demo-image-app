@@ -96,7 +96,28 @@ class Database:
             query = "SELECT * FROM products ORDER BY created_at DESC"
             self.cursor.execute(query)
             result = self.cursor.fetchall()
-            return pd.DataFrame(result) if result else pd.DataFrame()
+            df = pd.DataFrame(result) if result else pd.DataFrame()
+            
+            # Ensure image_url is properly formatted if using S3
+            # This ensures any relative paths are converted to absolute when needed
+            # but preserves S3 URLs as they are
+            if not df.empty and 'image_url' in df.columns:
+                from utils.api import is_s3_url
+                import os
+                
+                def format_image_url(url):
+                    if not url:
+                        return url
+                    if is_s3_url(url):
+                        return url  # S3 URLs are already complete
+                    # Convert relative paths to absolute if needed
+                    elif os.path.exists(url):
+                        return os.path.abspath(url)
+                    return url
+                
+                df['image_url'] = df['image_url'].apply(format_image_url)
+            
+            return df
         except Error as e:
             st.error(f"Error retrieving products: {e}")
             return pd.DataFrame()

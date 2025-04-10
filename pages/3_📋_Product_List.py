@@ -5,6 +5,9 @@ from utils.auth import check_password
 from utils.database import get_database_connection
 from PIL import Image
 import io
+import requests
+from utils.api import is_s3_url
+from utils.s3_storage import get_image_from_s3_url
 
 # Verify authentication
 if not check_password():
@@ -134,8 +137,20 @@ else:
                 
                 with col2:
                     # Display product image if available
-                    if product['image_url'] and os.path.exists(product['image_url']):
-                        st.image(product['image_url'], caption=f"Image for {product['product_name']}", use_column_width=True)
+                    if product['image_url']:
+                        if is_s3_url(product['image_url']):
+                            # S3 image
+                            img = get_image_from_s3_url(product['image_url'])
+                            if img:
+                                st.image(img, caption=f"Image for {product['product_name']}", use_column_width=True)
+                            else:
+                                st.markdown("📷 *Image unavailable or could not be loaded*")
+                        else:
+                            # Local image
+                            if os.path.exists(product['image_url']):
+                                st.image(product['image_url'], caption=f"Image for {product['product_name']}", use_column_width=True)
+                            else:
+                                st.markdown("📷 *Image file not found*")
                     else:
                         st.markdown("📷 *No image available*")
             

@@ -1,14 +1,21 @@
 # Product Generator App
 
-A Streamlit application for generating product mockups, managing product data, and exporting to CSV format.
+A Streamlit application for generating product mockups using DynamicMockups API, storing images in AWS S3, and managing product data with CSV export capabilities.
 
 ## Features
 
 - Generate product mockups using DynamicMockups API
-- Store product metadata in a MySQL database
-- Save generated images locally to avoid repeated API charges
+- Store images in AWS S3 for scalable cloud storage
+- Manage product metadata in a MySQL database
 - Export product data to a specific CSV format
 - Basic authentication system
+
+## Prerequisites
+
+- Python 3.7+
+- MySQL database
+- AWS account with S3 access
+- DynamicMockups API key
 
 ## Installation
 
@@ -27,7 +34,7 @@ A Streamlit application for generating product mockups, managing product data, a
    ```
    cp .env.example .env
    ```
-   Then edit the `.env` file with your database credentials and API key.
+   Then edit the `.env` file with your database credentials, API key, and AWS S3 credentials.
 
 4. Set up the MySQL database:
    ```sql
@@ -52,6 +59,12 @@ A Streamlit application for generating product mockups, managing product data, a
        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
    );
    ```
+
+5. Create an S3 bucket:
+   - Log in to your AWS console
+   - Create a new S3 bucket
+   - Set the appropriate permissions for public read access
+   - Create folders named `original` and `mockups` in the bucket
 
 ## Usage
 
@@ -90,12 +103,21 @@ The exported CSV follows this format:
 - Parent SKU
 - Size
 - Colour
-- Image URL
+- Image URL (S3 URLs for images)
 - Marketplace Title
 - Woocommerce Product Category
 - Tax Class
 - Qty
 - Price
+
+## S3 Storage Benefits
+
+Using AWS S3 for image storage provides:
+1. Scalability - Store thousands of images
+2. Reliability - 99.999999999% durability
+3. Cost-effectiveness - Pay only for what you use
+4. Performance - Fast global access with CDN capability
+5. Security - Configurable access controls
 
 ## Default Login
 
@@ -103,4 +125,3 @@ The exported CSV follows this format:
 - Password: password123
 
 *Note: In a production environment, you should change these credentials.*
-# demo-image-app

@@ -120,10 +120,33 @@ else:
     - **Parent SKU**: For child products, the SKU of the parent
     - **Size**: Product size (if applicable)
     - **Colour**: Product color
-    - **Image URL**: URL to the product image
+    - **Image URL**: URL to the product image (AWS S3 URL if cloud storage is enabled)
     - **Marketplace Title**: Full product title for marketplace listing
     - **Woocommerce Product Category**: Category path
     - **Tax Class**: Tax classification
     - **Qty**: Quantity in stock
     - **Price**: Product price
+    
+    > **Note:** With S3 storage enabled, the Image URL field will contain permanent, publicly accessible cloud URLs that can be directly used in e-commerce platforms.
+    """)
+    
+    # New section to explain S3 storage benefits
+    st.subheader("Cloud Storage Benefits")
+    st.markdown("""
+    This application uses **AWS S3** for image storage, which provides several advantages:
+    
+    1. **Scalability** - Store thousands of product images efficiently
+    2. **Reliability** - Highly available, durable storage with 99.999999999% durability
+    3. **Cost-effective** - Only pay for what you use, typically pennies per GB for storage
+    4. **Performance** - Fast image loading from AWS's global CDN network
+    5. **Security** - Images can be secured with permissions while still being accessible to your store
+    
+    Your exported CSV will contain direct links to these cloud-stored images that you can use in your e-commerce platform without having to re-upload them.
+    
+    ### How It Works
+    
+    1. When you upload product images, they're stored in your S3 bucket
+    2. Mockups are generated using the DynamicMockups API and also stored in S3
+    3. The exported CSV contains direct links to these S3-stored images
+    4. Your e-commerce platform can use these links directly - no need to re-upload!
     """)

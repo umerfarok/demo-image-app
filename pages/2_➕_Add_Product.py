@@ -2,7 +2,8 @@ import streamlit as st
 import os
 from utils.auth import check_password
 from utils.database import get_database_connection
-from utils.api import save_uploaded_image, generate_mockup
+from utils.api import save_uploaded_image, generate_mockup, is_s3_url
+from utils.s3_storage import get_image_from_s3_url
 import time
 
 # Verify authentication
@@ -161,24 +162,35 @@ with st.form(key="product_form", clear_on_submit=True):
         elif parent_child == "Child" and not parent_sku:
             st.error("Parent SKU is required for child products")
         else:
-            # Process image if uploaded
+            # Handle file upload
             image_path = None
-            mockup_path = None
+            mockup_url = None
             
             if uploaded_file:
                 with st.spinner("Processing image..."):
-                    # Save uploaded image
+                    # Save the uploaded image (to S3 or locally)
                     image_path = save_uploaded_image(uploaded_file)
                     
-                    # Generate mockup
-                    st.info("Generating product mockup...")
-                    mockup_path = generate_mockup(image_path, template_id)
+                    # Generate mockup using API
+                    st.info("Generating mockup using DynamicMockups API...")
+                    mockup_url = generate_mockup(image_path, template_id, is_s3_url(image_path))
                     
-                    if mockup_path:
+                    if mockup_url:
+                        # Show the mockup
                         st.success("Mockup generated successfully!")
-                        st.image(mockup_path, caption="Generated Mockup", use_column_width=True)
+                        
+                        if is_s3_url(mockup_url):
+                            # Display S3 image
+                            img = get_image_from_s3_url(mockup_url)
+                            if img:
+                                st.image(img, caption="Generated Mockup")
+                            else:
+                                st.warning("Generated mockup image cannot be previewed.")
+                        else:
+                            # Display local image
+                            st.image(mockup_url, caption="Generated Mockup")
                     else:
-                        st.error("Failed to generate mockup")
+                        st.error("Failed to generate mockup. Please try again.")
             
             # Prepare product data
             product_data = {
@@ -188,7 +200,7 @@ with st.form(key="product_form", clear_on_submit=True):
                 'parent_sku': parent_sku if parent_child == "Child" else None,
                 'size': size,
                 'color': color,
-                'image_url': mockup_path,
+                'image_url': mockup_url,
                 'marketplace_title': marketplace_title,
                 'category': category,
                 'tax_class': tax_class,
