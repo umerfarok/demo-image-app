@@ -19,6 +19,12 @@ st.title("📋 Product List")
 # Initialize database connection
 db = get_database_connection()
 
+# Initialize session state for delete confirmation
+if 'confirm_delete' not in st.session_state:
+    st.session_state.confirm_delete = False
+if 'product_to_delete' not in st.session_state:
+    st.session_state.product_to_delete = None
+
 # Get all products from database
 products_df = db.get_all_products()
 
@@ -50,6 +56,13 @@ with col3:
 
 # Apply filters
 filtered_df = products_df.copy()
+
+# Ensure numeric columns have proper data types
+if not filtered_df.empty:
+    # Convert price to float with error handling
+    filtered_df['price'] = pd.to_numeric(filtered_df['price'], errors='coerce').fillna(0.0)
+    # Convert quantity to integer with error handling
+    filtered_df['quantity'] = pd.to_numeric(filtered_df['quantity'], errors='coerce').fillna(0).astype(int)
 
 # Search filter
 if search_term:
@@ -90,7 +103,7 @@ else:
             "size": "Size",
             "color": "Color",
             "price": st.column_config.NumberColumn("Price", format="$%.2f"),
-            "quantity": "Quantity"
+            "quantity": st.column_config.NumberColumn("Quantity", format="%d")
         },
         use_container_width=True
     )
@@ -171,8 +184,20 @@ else:
                     with col2:
                         edited_size = st.text_input("Size", value=product['size'] or "")
                         edited_color = st.text_input("Color", value=product['color'] or "")
-                        edited_quantity = st.number_input("Quantity", value=product['quantity'], min_value=0)
-                        edited_price = st.number_input("Price", value=float(product['price']), format="%.2f", min_value=0.0)
+                        
+                        # Add safe conversion for quantity
+                        try:
+                            quantity_value = int(product['quantity'])
+                        except (ValueError, TypeError):
+                            quantity_value = 0
+                        edited_quantity = st.number_input("Quantity", value=quantity_value, min_value=0)
+                        
+                        # Add safe conversion for price
+                        try:
+                            price_value = float(product['price'])
+                        except (ValueError, TypeError):
+                            price_value = 0.0
+                        edited_price = st.number_input("Price", value=price_value, format="%.2f", min_value=0.0)
                     
                     edited_category = st.text_input("Category", value=product['category'] or "")
                     edited_tax_class = st.text_input("Tax Class", value=product['tax_class'] or "")
@@ -182,6 +207,8 @@ else:
                     new_image = st.file_uploader("Upload New Image (leave empty to keep current)", type=["png", "jpg", "jpeg"])
                     
                     submit = st.form_submit_button("Update Product")
+                    
+                    # Change delete button to a form submit button to trigger confirmation
                     delete = st.form_submit_button("Delete Product", type="primary")
                     
                     if submit:
@@ -211,17 +238,27 @@ else:
                             st.error("Failed to update product")
                     
                     if delete:
-                        # Confirm deletion
-                        st.warning("Are you sure you want to delete this product? This action cannot be undone.")
-                        
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            if st.button("Yes, Delete Product"):
-                                if db.delete_product(selected_product_id):
-                                    st.success("Product deleted successfully!")
-                                    st.experimental_rerun()
-                                else:
-                                    st.error("Failed to delete product")
-                        with col2:
-                            if st.button("Cancel"):
+                        # Set session state to show confirmation instead of performing delete directly
+                        st.session_state.confirm_delete = True
+                        st.session_state.product_to_delete = selected_product_id
+                        st.experimental_rerun()
+                
+                # Delete confirmation - outside the form
+                if st.session_state.confirm_delete and st.session_state.product_to_delete == selected_product_id:
+                    st.warning("Are you sure you want to delete this product? This action cannot be undone.")
+                    
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        if st.button("Yes, Delete Product"):
+                            if db.delete_product(selected_product_id):
+                                st.session_state.confirm_delete = False
+                                st.session_state.product_to_delete = None
+                                st.success("Product deleted successfully!")
                                 st.experimental_rerun()
+                            else:
+                                st.error("Failed to delete product")
+                    with col2:
+                        if st.button("Cancel"):
+                            st.session_state.confirm_delete = False
+                            st.session_state.product_to_delete = None
+                            st.experimental_rerun()

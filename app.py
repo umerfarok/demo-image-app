@@ -41,7 +41,7 @@ st.title("Product Generator Dashboard")
 
 # Welcome message with card styling
 st.markdown("""
-<div style="background-color: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+<div style="background-color: black; padding: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
     <h2 style="margin-top:0">Welcome to the Product Generator</h2>
     <p>This application allows you to:</p>
     <ul>
