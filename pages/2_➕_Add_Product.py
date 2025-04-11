@@ -1,5 +1,6 @@
 import streamlit as st
 import os
+import json
 from utils.auth import check_password
 from utils.database import get_database_connection
 from utils.api import save_uploaded_image, generate_mockup, is_s3_url
@@ -10,215 +11,129 @@ import time
 if not check_password():
     st.stop()
 
+# Initialize session state for sizes and colors if not already done
+if 'sizes' not in st.session_state:
+    st.session_state.sizes = []
+if 'colors' not in st.session_state:
+    st.session_state.colors = []
+
+# Function to add size
+def add_size():
+    if st.session_state.size_name and st.session_state.size_sku:
+        st.session_state.sizes.append({
+            'name': st.session_state.size_name,
+            'sku': st.session_state.size_sku
+        })
+        st.session_state.size_name = ""
+        st.session_state.size_sku = ""
+
+# Function to add color
+def add_color():
+    if st.session_state.color_name and st.session_state.color_hex:
+        st.session_state.colors.append({
+            'name': st.session_state.color_name,
+            'hex': st.session_state.color_hex
+        })
+        st.session_state.color_hex = ""
+
 # Page configuration
-st.title("➕ Add Product")
+st.title("Add Blank Item")
 
-# Initialize database connection
-db = get_database_connection()
+# Create a two-column layout
+form_col, preview_col = st.columns([2, 1], gap="large")
 
-# Custom CSS for form styling
-st.markdown("""
-<style>
-    .product-form {
-        background-color: white;
-        padding: 20px;
-        border-radius: 10px;
-        box-shadow: 0 0.15rem 1.75rem 0 rgba(58, 59, 69, 0.15);
-    }
-    .required:after {
-        content: " *";
-        color: red;
-    }
-</style>
-""", unsafe_allow_html=True)
+# Add Blank Item form in the left column
+with form_col:
+    # Form for adding a blank item
+    with st.form(key="add_blank_item_form", clear_on_submit=False):
+        # Item Name and SKU
+        st.text_input("Item Name", placeholder="Enter item name", key="item_name")
+        st.text_input("SKU", placeholder="Enter SKU", key="sku")
 
-with st.form(key="product_form", clear_on_submit=True):
-    st.markdown('<div class="product-form">', unsafe_allow_html=True)
-    
-    st.subheader("Basic Information")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        product_name = st.text_input(
-            "Product Name", 
-            help="Name of the product",
-            placeholder="e.g., Vintage Graphic T-shirt"
-        )
-        st.markdown('<p class="required">Product Name is required</p>', unsafe_allow_html=True)
+        # Size Section
+        st.subheader("Size")
+        cols = st.columns([3, 1])
+        with cols[0]:
+            st.text_input("Size", placeholder="Enter size name", key="size_name")
+        with cols[1]:
+            st.text_input("Size SKU", placeholder="Enter size SKU", key="size_sku")
+        st.form_submit_button("Add Size", on_click=add_size)
+
+        # Display added sizes
+        if st.session_state.sizes:
+            st.text_area("Size SKU", value="\n".join([f"{size['name']} - {size['sku']}" for size in st.session_state.sizes]), height=100)
+
+        # Color Section
+        st.subheader("Color")
+        cols = st.columns([3, 1, 1])
+        with cols[0]:
+            st.selectbox("Color", ["Black", "White", "Navy", "Grey"], key="color_name")
+        with cols[1]:
+            st.text_input("Hex Colour", placeholder="#FFFFFF", key="color_hex")
+        with cols[2]:
+            st.form_submit_button("Add Color", on_click=add_color)
+
+        # Display added colors
+        if st.session_state.colors:
+            st.text_area("Smart Object UUID (for colour)", value="\n".join([color['name'] for color in st.session_state.colors]), height=100)
+
+        # Mockup ID
+        st.subheader("Mockup ID")
+        st.text_input("Enter Mockup ID (UUID)", placeholder="Enter UUID", key="mockup_id")
+
+        # Submit button
+        submit_button = st.form_submit_button(label="Save")
         
-        item_sku = st.text_input(
-            "Item SKU",
-            help="Stock keeping unit - unique identifier for this product",
-            placeholder="e.g., VGT-001"
-        )
-        st.markdown('<p class="required">Item SKU is required</p>', unsafe_allow_html=True)
-    
-    with col2:
-        parent_child = st.selectbox(
-            "Parent/Child",
-            options=["Parent", "Child"],
-            help="Is this a parent product or a child variant?"
-        )
-        
-        parent_sku = st.text_input(
-            "Parent SKU",
-            help="Required if this is a child variant",
-            placeholder="e.g., VGT-000"
-        )
-        if parent_child == "Child":
-            st.markdown('<p class="required">Parent SKU is required for child products</p>', unsafe_allow_html=True)
-    
-    st.subheader("Product Details")
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        size = st.selectbox(
-            "Size",
-            options=["", "XS", "S", "M", "L", "XL", "XXL", "XXXL"],
-            help="Product size"
-        )
-    
-    with col2:
-        color = st.text_input(
-            "Color",
-            help="Product color",
-            placeholder="e.g., Blue"
-        )
-    
-    with col3:
-        tax_class = st.selectbox(
-            "Tax Class",
-            options=["", "Standard", "Reduced", "Zero"],
-            help="Tax classification for this product"
-        )
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        quantity = st.number_input(
-            "Quantity",
-            min_value=0,
-            value=10,
-            help="Inventory quantity"
-        )
-    
-    with col2:
-        price = st.number_input(
-            "Price",
-            min_value=0.0,
-            value=19.99,
-            format="%.2f",
-            help="Product price"
-        )
-    
-    st.subheader("Marketing")
-    
-    marketplace_title = st.text_area(
-        "Marketplace Title",
-        help="Full title for marketplace listings",
-        placeholder="e.g., Vintage Graphic T-shirt with Distressed Design - 100% Cotton - Unisex"
-    )
-    
-    category = st.text_input(
-        "Product Category",
-        help="Product category for organization",
-        placeholder="e.g., Apparel > T-shirts"
-    )
-    
-    st.subheader("Product Image")
-    
-    uploaded_file = st.file_uploader(
-        "Upload Product Image",
-        type=["png", "jpg", "jpeg"],
-        help="Upload a high quality image for the mockup"
-    )
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        template_id = st.selectbox(
-            "Mockup Template",
-            options=["t-shirt", "hoodie", "mug", "poster", "phone-case"],
-            help="Select the product template for the mockup"
-        )
-    
-    # Preview uploaded image if available
-    if uploaded_file is not None:
-        st.image(uploaded_file, caption="Uploaded Image", use_column_width=True)
-    
-    submit_button = st.form_submit_button(label="Create Product", use_container_width=True)
-    
-    st.markdown('</div>', unsafe_allow_html=True)
-    
-    # Handle form submission
-    if submit_button:
-        # Validate required fields
-        if not product_name:
-            st.error("Product Name is required")
-        elif not item_sku:
-            st.error("Item SKU is required")
-        elif parent_child == "Child" and not parent_sku:
-            st.error("Parent SKU is required for child products")
-        else:
-            # Handle file upload
-            image_path = None
-            mockup_url = None
-            
-            if uploaded_file:
-                with st.spinner("Processing image..."):
-                    # Save the uploaded image (to S3 or locally)
-                    image_path = save_uploaded_image(uploaded_file)
-                    
-                    # Generate mockup using API
-                    st.info("Generating mockup using DynamicMockups API...")
-                    mockup_url = generate_mockup(image_path, template_id, is_s3_url(image_path))
-                    
-                    if mockup_url:
-                        # Show the mockup
-                        st.success("Mockup generated successfully!")
-                        
-                        if is_s3_url(mockup_url):
-                            # Display S3 image
-                            img = get_image_from_s3_url(mockup_url)
-                            if img:
-                                st.image(img, caption="Generated Mockup")
-                            else:
-                                st.warning("Generated mockup image cannot be previewed.")
-                        else:
-                            # Display local image
-                            st.image(mockup_url, caption="Generated Mockup")
-                    else:
-                        st.error("Failed to generate mockup. Please try again.")
-            
-            # Prepare product data
-            product_data = {
-                'product_name': product_name,
-                'item_sku': item_sku,
-                'parent_child': parent_child,
-                'parent_sku': parent_sku if parent_child == "Child" else None,
-                'size': size,
-                'color': color,
-                'image_url': mockup_url,
-                'marketplace_title': marketplace_title,
-                'category': category,
-                'tax_class': tax_class,
-                'quantity': quantity,
-                'price': price
-            }
-            
-            # Save to database
-            with st.spinner("Saving product..."):
-                product_id = db.add_product(product_data)
-                
-                if product_id:
-                    st.success(f"Product added successfully with ID: {product_id}")
-                    
-                    # Add a redirect button to view the product list
-                    if st.button("View Product List"):
-                        st.experimental_set_query_params(page="product_list")
-                        time.sleep(0.1)
-                        st.experimental_rerun()
-                else:
-                    st.error("Failed to save product")
+# Mockup Views in the right column
+with preview_col:
+    st.subheader("Mockup Views")
+    for i in range(3):  # 3 rows of mockups
+        cols = st.columns(3)
+        for j, col in enumerate(cols):
+            with col:
+                st.image("https://via.placeholder.com/150", caption=f"Mockup {i * 3 + j + 1}")
+                st.selectbox("Select Colour", ["Black", "White", "Navy", "Grey"], key=f"mockup_color_{i * 3 + j}")
+
+# Process form submission
+if submit_button:  # Using the variable directly instead of checking session state
+    # Prepare product data
+    product_data = {
+        'product_name': st.session_state.item_name,
+        'item_sku': st.session_state.sku,
+        'parent_child': 'Parent',
+        'parent_sku': None,
+        'size': st.session_state.size_name if not st.session_state.sizes else json.dumps(st.session_state.sizes),
+        'color': st.session_state.color_name if not st.session_state.colors else json.dumps(st.session_state.colors),
+        'mockup_id': st.session_state.mockup_id,  # Added mockup ID to the data
+        'image_url': None,
+        'marketplace_title': None,
+        'category': None,
+        'tax_class': None,
+        'quantity': 0,
+        'price': 0.0,
+    }
+
+    # Validate required fields
+    if not product_data['product_name'] or not product_data['item_sku']:
+        st.error("Please fill in the Item Name and SKU fields.")
+    else:
+        # Debug: Print product data to validate
+        st.write("Product Data to be saved:", product_data)
+
+        # Add product to database
+        db = get_database_connection()
+        try:
+            product_id = db.add_product(product_data)
+            if product_id:
+                st.success(f"Product added successfully with ID: {product_id}")
+                # Reset form and session state
+                st.session_state.sizes = []
+                st.session_state.colors = []
+                st.session_state.item_name = ""
+                st.session_state.sku = ""
+                st.session_state.mockup_id = ""
+            else:
+                st.error("Failed to add product. Database returned no product ID.")
+        except Exception as e:
+            st.error(f"An error occurred while saving the product: {e}")
+            st.write("Debug Info:", product_data)
