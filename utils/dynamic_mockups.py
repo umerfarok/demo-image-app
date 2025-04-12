@@ -10,7 +10,7 @@ load_dotenv()
 
 # DynamicMockups API configuration
 API_KEY = os.getenv('DYNAMIC_MOCKUPS_API_KEY')
-API_BASE_URL = "https://api.dynamicmockups.com/v1"
+API_BASE_URL = "https://app.dynamicmockups.com/api/v1"
 
 def get_mockup_collections():
     """
@@ -26,26 +26,18 @@ def get_mockup_collections():
         )
         
         if response.status_code == 200:
+            print(f"API response: {response.json()}")
             return response.json().get('collections', [])
         else:
+            print(f"Failed to fetch collections: {response.status_code}")
             st.error(f"Failed to fetch mockup collections: {response.status_code}")
             return []
     except Exception as e:
+        print(f"Error fetching mockup collections: {e}")
         st.error(f"Error fetching mockup collections: {e}")
         return []
 
 def get_mockups(collection_id=None, category=None, limit=100):
-    """
-    Get available mockups with optional filtering
-    
-    Args:
-        collection_id: Optional ID of collection to filter by
-        category: Optional category to filter by
-        limit: Maximum number of mockups to return
-        
-    Returns:
-        list: List of mockups or empty list if error occurs
-    """
     try:
         params = {"limit": limit}
         if collection_id:
@@ -55,16 +47,18 @@ def get_mockups(collection_id=None, category=None, limit=100):
             
         response = requests.get(
             f"{API_BASE_URL}/mockups",
-            headers={"Authorization": f"Bearer {API_KEY}"},
-            params=params
+            headers={"x-api-key": f"{API_KEY}"},
+            # params=params
         )
         
         if response.status_code == 200:
-            return response.json().get('mockups', [])
+            return response.json().get('data', [])
         else:
+            print(f"Failed to fetch mockups: {response.status_code}")
             st.error(f"Failed to fetch mockups: {response.status_code}")
             return []
     except Exception as e:
+        print(f"Error fetching mockups: {e}")
         st.error(f"Error fetching mockups: {e}")
         return []
 
