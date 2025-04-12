@@ -1,6 +1,8 @@
 import streamlit as st
 import os
 import json
+import random
+import string
 from utils.database import get_database_connection
 from utils.api import save_uploaded_image, generate_mockup, is_s3_url
 from utils.s3_storage import get_image_from_s3_url
@@ -36,25 +38,48 @@ if 'item_name' not in st.session_state:
     st.session_state.item_name = ""  # Initialize item name as empty string
 if 'preview_mockup_selection' not in st.session_state:
     st.session_state.preview_mockup_selection = ""  # Initialize preview selection
+if 'available_sizes' not in st.session_state:
+    st.session_state.available_sizes = ["Small", "Medium", "Large", "XL", "XXL", "XXXL"]
+if 'selected_sizes' not in st.session_state:
+    st.session_state.selected_sizes = []
 
-# Function to add size
-def add_size():
-    if st.session_state.size_name and st.session_state.size_sku:
+# Color to hex mapping
+COLOR_HEX_MAP = {
+    "Black": "#000000",
+    "White": "#FFFFFF",
+    "Navy": "#000080",
+    "Grey": "#808080",
+    "Red": "#FF0000",
+    "Blue": "#0000FF",
+    "Green": "#008000",
+    "Yellow": "#FFFF00",
+    "Purple": "#800080"
+}
+
+# Function to generate random SKU
+def generate_random_sku(prefix="", length=8):
+    """Generate a random SKU with specified length using letters and digits"""
+    chars = string.ascii_uppercase + string.digits
+    random_part = ''.join(random.choice(chars) for _ in range(length))
+    return f"{prefix}{random_part}" if prefix else random_part
+
+# Function to add multiple sizes
+def add_sizes():
+    st.session_state.sizes = []
+    for size in st.session_state.selected_sizes:
+        # Create a random SKU for each size
+        size_sku = generate_random_sku(prefix=f"{size.lower()[:1]}-", length=6)
         st.session_state.sizes.append({
-            'name': st.session_state.size_name,
-            'sku': st.session_state.size_sku
+            'name': size,
+            'sku': size_sku
         })
-        st.session_state.size_name = ""
-        st.session_state.size_sku = ""
 
-# Function to add color
-def add_color():
-    if st.session_state.color_name and st.session_state.color_hex:
-        st.session_state.colors.append({
-            'name': st.session_state.color_name,
-            'hex': st.session_state.color_hex
-        })
-        st.session_state.color_hex = ""
+# Function to add multiple colors
+def add_colors():
+    st.session_state.colors = []
+    for color in st.session_state.selected_colors:
+        # Only store the hex value, not the color name
+        st.session_state.colors.append(COLOR_HEX_MAP.get(color, "#FFFFFF"))
 
 # Function to update item name and mockup ID when selection changes
 def update_mockup_selection():
@@ -141,30 +166,52 @@ with st.form(key="add_blank_item_form", clear_on_submit=False):
 
     # Size Section
     st.subheader("Size")
-    cols = st.columns([3, 1])
-    with cols[0]:
-        st.text_input("Size", placeholder="Enter size name", key="size_name")
-    with cols[1]:
-        st.text_input("Size SKU", placeholder="Enter size SKU", key="size_sku")
-    st.form_submit_button("Add Size", on_click=add_size)
+    # Use multiselect for sizes
+    st.multiselect(
+        "Select Sizes", 
+        options=st.session_state.available_sizes,
+        default=st.session_state.selected_sizes,
+        key="selected_sizes"
+    )
+    
+    st.form_submit_button("Add Sizes", on_click=add_sizes)
 
     # Display added sizes
     if st.session_state.sizes:
-        st.text_area("Size SKU", value="\n".join([f"{size['name']} - {size['sku']}" for size in st.session_state.sizes]), height=100)
+        st.text_area("Size SKUs", value="\n".join([f"{size['name']} - {size['sku']}" for size in st.session_state.sizes]), height=100)
 
     # Color Section
     st.subheader("Color")
-    cols = st.columns([3, 1, 1])
-    with cols[0]:
-        st.selectbox("Color", ["Black", "White", "Navy", "Grey"], key="color_name")
-    with cols[1]:
-        st.text_input("Hex Colour", placeholder="#FFFFFF", key="color_hex")
-    with cols[2]:
-        st.form_submit_button("Add Color", on_click=add_color)
+    # Use multiselect for colors
+    st.multiselect(
+        "Select Colors",
+        options=list(COLOR_HEX_MAP.keys()),
+        key="selected_colors"
+    )
+    
+    # Display color previews
+    if "selected_colors" in st.session_state and st.session_state.selected_colors:
+        st.write("Color Preview:")
+        cols = st.columns(len(st.session_state.selected_colors))
+        for i, color in enumerate(st.session_state.selected_colors):
+            hex_color = COLOR_HEX_MAP.get(color, "#FFFFFF")
+            with cols[i]:
+                st.markdown(f"""
+                    <div style="
+                        background-color: {hex_color}; 
+                        width: 30px; 
+                        height: 30px; 
+                        border-radius: 5px;
+                        border: 1px solid #ddd;
+                    "></div>
+                    <p>{color}<br>{hex_color}</p>
+                """, unsafe_allow_html=True)
+    
+    st.form_submit_button("Add Colors", on_click=add_colors)
 
     # Display added colors
     if st.session_state.colors:
-        st.text_area("Smart Object UUID (for colour)", value="\n".join([color['name'] for color in st.session_state.colors]), height=100)
+        st.text_area("Selected Colors", value="\n".join(st.session_state.colors), height=100)
 
     # Mockup ID display
     st.subheader("Mockup Information")

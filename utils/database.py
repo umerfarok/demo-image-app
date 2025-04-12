@@ -32,19 +32,49 @@ class Database:
             item_sku VARCHAR(100) NOT NULL,
             parent_child ENUM('Parent', 'Child') NOT NULL,
             parent_sku VARCHAR(100) NULL,
-            size VARCHAR(50) NULL,
-            color VARCHAR(50) NULL,
+            size TEXT NULL,
+            color TEXT NULL,
             image_url TEXT NULL,
             marketplace_title TEXT NULL,
             category VARCHAR(100) NULL,
             tax_class VARCHAR(50) NULL,
             quantity INT NOT NULL DEFAULT 0,
             price DECIMAL(10, 2) NOT NULL DEFAULT 0.00,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            mockup_id VARCHAR(100) NULL,
+            smart_object_uuid VARCHAR(100) NULL
         )
         """
         self.cursor.execute(create_products_table)
         self.connection.commit()
+        
+        # Alter table to modify columns if they already exist with smaller size
+        try:
+            alter_size_query = "ALTER TABLE products MODIFY COLUMN size TEXT"
+            self.cursor.execute(alter_size_query)
+            
+            alter_color_query = "ALTER TABLE products MODIFY COLUMN color TEXT"
+            self.cursor.execute(alter_color_query)
+            
+            # Add mockup_id and smart_object_uuid columns if they don't exist
+            check_column_query = """
+            SELECT COUNT(*) as column_exists FROM information_schema.columns 
+            WHERE table_schema = DATABASE() AND table_name = 'products' AND column_name = 'mockup_id'
+            """
+            self.cursor.execute(check_column_query)
+            result = self.cursor.fetchone()
+            
+            if result and result['column_exists'] == 0:
+                add_column_query = """
+                ALTER TABLE products 
+                ADD COLUMN mockup_id VARCHAR(100) NULL,
+                ADD COLUMN smart_object_uuid VARCHAR(100) NULL
+                """
+                self.cursor.execute(add_column_query)
+                
+            self.connection.commit()
+        except Error as e:
+            st.warning(f"Table alteration notice: {e}")
     
     def add_product(self, product_data):
         """
