@@ -46,6 +46,23 @@ class Database:
         )
         """
         self.cursor.execute(create_products_table)
+        
+        # Check if columns exist and add them if they don't
+        try:
+            # Check if mockup_id column exists
+            self.cursor.execute("SHOW COLUMNS FROM products LIKE 'mockup_id'")
+            if not self.cursor.fetchone():
+                self.cursor.execute("ALTER TABLE products ADD COLUMN mockup_id VARCHAR(255) NULL")
+            
+            # Check if smart_object_uuid column exists
+            self.cursor.execute("SHOW COLUMNS FROM products LIKE 'smart_object_uuid'")
+            if not self.cursor.fetchone():
+                self.cursor.execute("ALTER TABLE products ADD COLUMN smart_object_uuid VARCHAR(255) NULL")
+            
+            self.connection.commit()
+        except Error as e:
+            st.error(f"Error modifying products table: {e}")
+        
         self.connection.commit()
         
         # Alter table to modify columns if they already exist with smaller size
