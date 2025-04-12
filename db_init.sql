@@ -22,6 +22,8 @@ CREATE TABLE IF NOT EXISTS products (
     quantity INT NOT NULL DEFAULT 0,
     price DECIMAL(10, 2) NOT NULL DEFAULT 0.00,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    mockup_id VARCHAR(100) NULL,
+    smart_object_uuid VARCHAR(100) NULL,
     
     -- Add indexes for better performance
     INDEX idx_item_sku (item_sku),
