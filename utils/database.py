@@ -60,8 +60,9 @@ class Database:
             query = """
             INSERT INTO products (
                 product_name, item_sku, parent_child, parent_sku, size, color, 
-                image_url, marketplace_title, category, tax_class, quantity, price
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                image_url, marketplace_title, category, tax_class, quantity, price,
+                mockup_id, smart_object_uuid
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """
             values = (
                 product_data['product_name'],
@@ -75,7 +76,9 @@ class Database:
                 product_data['category'],
                 product_data['tax_class'],
                 product_data['quantity'],
-                product_data['price']
+                product_data['price'],
+                product_data['mockup_id'],
+                product_data['smart_object_uuid'],
             )
             
             self.cursor.execute(query, values)
