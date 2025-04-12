@@ -10,7 +10,7 @@ USE product_generator;
 CREATE TABLE IF NOT EXISTS products (
     id INT AUTO_INCREMENT PRIMARY KEY,
     product_name VARCHAR(255) NOT NULL,
-    item_sku VARCHAR(100) NOT NULL,
+    item_sku VARCHAR(100) NOT NULL UNIQUE,
     parent_child ENUM('Parent', 'Child') NOT NULL,
     parent_sku VARCHAR(100) NULL,
     size VARCHAR(100) NULL,
@@ -30,8 +30,12 @@ CREATE TABLE IF NOT EXISTS products (
     INDEX idx_parent_child (parent_child),
     INDEX idx_parent_sku (parent_sku),
     INDEX idx_category (category)
+    
+    -- Removing the foreign key constraint to avoid circular dependency issues
+    -- CONSTRAINT fk_parent_product FOREIGN KEY (parent_sku)
+    -- REFERENCES products(item_sku) ON DELETE CASCADE ON UPDATE CASCADE
 );
 
--- Add sample product (optional, uncomment if you want a sample product)
--- INSERT INTO products (product_name, item_sku, parent_child, size, color, quantity, price, category)
--- VALUES ('Sample T-Shirt', 'TS-001', 'Parent', 'M', 'Black', 10, 19.99, 'Apparel > T-shirts');
+-- Add sample product (uncommented for initial testing)
+INSERT INTO products (product_name, item_sku, parent_child, size, color, quantity, price, category)
+VALUES ('Sample T-Shirt', 'TS-001', 'Parent', 'M', 'Black', 10, 19.99, 'Apparel > T-shirts');

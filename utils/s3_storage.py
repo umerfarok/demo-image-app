@@ -90,15 +90,53 @@ def upload_image_file_to_s3(file, folder=ORIGINAL_FOLDER):
     """
     if not file:
         return None
-        
+    
+    # Verify AWS credentials before attempting upload
+    if not all([AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, S3_BUCKET_NAME, AWS_REGION]):
+        st.error("AWS credentials are missing or incomplete. Check your .env file.")
+        return None
+    
+    # Debug information to help troubleshoot (remove in production)
+    st.info(f"Using bucket: {S3_BUCKET_NAME} in region: {AWS_REGION}")
+    
     try:
         # Get file details
         content = file.getvalue()
         file_extension = os.path.splitext(file.name)[1].lower()
         content_type = file.type
         
-        # Upload to S3
-        return upload_file_to_s3(content, folder, file_extension, content_type)
+        s3_client = get_s3_client()
+        if not s3_client:
+            st.error("Failed to initialize S3 client. Check AWS credentials.")
+            return None
+        
+        # Generate a unique filename
+        filename = f"{uuid.uuid4()}{file_extension}"
+        s3_key = f"{folder}/{filename}"
+        
+        # Upload to S3 with explicit error handling
+        try:
+            s3_client.put_object(
+                Body=content,
+                Bucket=S3_BUCKET_NAME,
+                Key=s3_key,
+                ContentType=content_type
+            )
+            
+            # Generate the URL
+            url = f"https://{S3_BUCKET_NAME}.s3.{AWS_REGION}.amazonaws.com/{s3_key}"
+            return url
+        except ClientError as e:
+            error_code = e.response.get('Error', {}).get('Code', 'Unknown')
+            error_message = e.response.get('Error', {}).get('Message', str(e))
+            st.error(f"S3 upload failed with error {error_code}: {error_message}")
+            
+            if error_code == 'SignatureDoesNotMatch':
+                st.warning("This is often caused by incorrect AWS credentials or clock skew. Verify your AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY in the .env file.")
+            elif error_code == 'NoSuchBucket':
+                st.warning(f"The bucket '{S3_BUCKET_NAME}' does not exist or you don't have permission to access it.")
+            
+            return None
     except Exception as e:
         st.error(f"Error processing uploaded file: {e}")
         return None
