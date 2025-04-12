@@ -198,21 +198,39 @@ if submit_button:
     # Get the current value of sku from the session state without modifying it
     item_sku = st.session_state.sku
     
+    # Get smart object UUID from the selected mockup
+    smart_object_uuid = None
+    selected_mockup_id = st.session_state.mockup_id
+    selected_mockup_name = st.session_state.item_name
+    
+    # Look through mockups to find the selected one and extract smart object UUID
+    for mockup in mockups:
+        mockup_id = mockup.get('id', mockup.get('uuid', ''))
+        if mockup_id == selected_mockup_id:
+            # Find the smart object with matching name
+            for so in mockup.get('smart_objects', []):
+                if 'Background' not in so.get('name', '') and so.get('name', '') == selected_mockup_name:
+                    smart_object_uuid = so.get('uuid', None)
+                    print(f"Found smart object UUID: {smart_object_uuid}")  # Debug
+                    break
+            break
+    
     # Prepare product data
     product_data = {
         'product_name': st.session_state.item_name,  # Use the synced item name
         'item_sku': item_sku,  # Use local variable instead of modifying session state
         'parent_child': 'Parent',
-         'parent_sku': None,
+        'parent_sku': None,
         'size': st.session_state.size_name if not st.session_state.sizes else json.dumps(st.session_state.sizes),
         'color': st.session_state.color_name if not st.session_state.colors else json.dumps(st.session_state.colors),
         'mockup_id': st.session_state.mockup_id,
-         'image_url': None,
-         'marketplace_title': None,
+        'image_url': None,
+        'marketplace_title': None,
         'category': st.session_state.mockup_selection,  # Use the selected mockup value as category
-         'tax_class': None,
-         'quantity': 0,
-         'price': 0.0,
+        'tax_class': None,
+        'quantity': 0,
+        'price': 0.0,
+        'smart_object_uuid': smart_object_uuid,  # Include the smart object UUID
     }
 
     # Validate required fields
@@ -222,6 +240,7 @@ if submit_button:
         st.error("Please select a mockup.")
     else:
         # Debug: Print product data
+        print(f"Product data before saving: {product_data}")  # Debug
         st.write("Product Data to be saved:", product_data)
 
         # Add product to database
