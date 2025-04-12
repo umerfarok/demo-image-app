@@ -497,22 +497,43 @@ def generate_product_page():
             for i, (hex_color, color_name) in enumerate(zip(available_mockup_colors, available_mockup_names)):
                 col_idx = i % num_cols
                 with mockup_cols[col_idx]:
-                    st.selectbox(
+                    # Get the current color name selected in the dropdown
+                    current_color = color_name
+                    
+                    # Create a dropdown to select colors
+                    selected_color = st.selectbox(
                         f"Color {i+1}", 
                         colors if colors else AVAILABLE_COLORS,
                         index=colors.index(color_name) if color_name in colors else 0,
                         key=f"preview{i}_color",
-                        on_change=on_color_change,
-                        args=(f"preview{i}",),
-                        disabled=True  # Disable changing colors for already generated mockups
+                        disabled=False  # Enable color changing
                     )
                     
-                    # Display the mockup image
-                    st.image(
-                        st.session_state.mockup_results[hex_color],
-                        caption=f"{color_name} ({hex_color})",
-                        use_column_width=True
-                    )
+                    # Check if color has changed and regenerate mockup if needed
+                    if selected_color != current_color:
+                        # Generate a new mockup for this color if it's different
+                        hex_selected = color_name_to_hex(selected_color)
+                        if hex_selected not in st.session_state.mockup_results:
+                            st.info(f"Generating mockup for {selected_color}...")
+                            if st.session_state.uploaded_image_url:
+                                generate_on_demand_mockup(selected_color)
+                                # Refresh the page to show the new mockup
+                                st.experimental_rerun()
+                    
+                    # Display the mockup image for the selected color
+                    display_hex = color_name_to_hex(selected_color)
+                    if display_hex in st.session_state.mockup_results:
+                        st.image(
+                            st.session_state.mockup_results[display_hex],
+                            caption=f"{selected_color} ({display_hex})",
+                            use_column_width=True
+                        )
+                    else:
+                        st.image(
+                            st.session_state.mockup_results[hex_color],
+                            caption=f"{color_name} ({hex_color})",
+                            use_column_width=True
+                        )
                     
                     # Add a small gap after each image for better visual separation
                     st.write("")
@@ -529,9 +550,7 @@ def generate_product_page():
                 color1 = st.selectbox(
                     "Select Color 1", 
                     available_colors,
-                    key="preview1_color",
-                    on_change=on_color_change,
-                    args=("preview1",)
+                    key="preview1_color"
                 )
                 
                 # Show placeholder if no mockup available yet
@@ -547,9 +566,7 @@ def generate_product_page():
                 color2 = st.selectbox(
                     "Select Color 2", 
                     available_colors,
-                    key="preview2_color",
-                    on_change=on_color_change,
-                    args=("preview2",)
+                    key="preview2_color"
                 )
                 
                 # Show placeholder if no mockup available yet
@@ -565,9 +582,7 @@ def generate_product_page():
                 color3 = st.selectbox(
                     "Select Color 3", 
                     available_colors,
-                    key="preview3_color",
-                    on_change=on_color_change,
-                    args=("preview3",)
+                    key="preview3_color"
                 )
                 
                 # Show placeholder if no mockup available yet
