@@ -36,6 +36,28 @@ CREATE TABLE IF NOT EXISTS products (
     -- REFERENCES products(item_sku) ON DELETE CASCADE ON UPDATE CASCADE
 );
 
+-- Create generated_products table to store products that have been generated with mockups
+CREATE TABLE IF NOT EXISTS generated_products (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    product_name VARCHAR(255) NOT NULL,
+    design_sku VARCHAR(100) NOT NULL UNIQUE,
+    marketplace_title TEXT NULL,
+    size TEXT NULL,                -- Stores JSON array of available sizes
+    color TEXT NULL,               -- Stores JSON array of available colors as hex values
+    original_design_url TEXT NULL, -- URL to the original design image in S3
+    mockup_urls TEXT NULL,         -- Stores JSON object mapping hex colors to S3 mockup URLs
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    is_published BOOLEAN DEFAULT FALSE,
+    parent_product_id INT NULL,    -- Optional reference to a parent product
+    
+    -- Add indexes for better performance
+    INDEX idx_design_sku (design_sku),
+    INDEX idx_created_at (created_at),
+    INDEX idx_is_published (is_published),
+    INDEX idx_parent_product_id (parent_product_id)
+);
+
 -- Add sample product (uncommented for initial testing)
 INSERT INTO products (product_name, item_sku, parent_child, size, color, quantity, price, category)
 VALUES ('Sample T-Shirt', 'TS-001', 'Parent', 'M', 'Black', 10, 19.99, 'Apparel > T-shirts');
