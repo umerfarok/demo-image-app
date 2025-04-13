@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import json
 from utils.auth import check_password
 from utils.database import get_database_connection
 from utils.export import export_to_csv
@@ -93,11 +94,86 @@ else:
     
     st.write(f"Found {len(filtered_df)} products matching your criteria.")
     
+    # Process size and color data for CSV formatting
+    export_df = filtered_df.copy()
+    
+    # Format size column if exists
+    if 'size' in export_df.columns:
+        def format_size(size_str):
+            if pd.isna(size_str) or size_str == '':
+                return ''
+            try:
+                # Handle if it's a JSON string
+                if isinstance(size_str, str):
+                    sizes = json.loads(size_str)
+                    if isinstance(sizes, list):
+                        return ','.join([item['name'] for item in sizes if 'name' in item])
+                    return size_str
+                return str(size_str)
+            except:
+                return str(size_str)
+        
+        export_df['size'] = export_df['size'].apply(format_size)
+    
+    # Format color column if exists
+    if 'colour' in export_df.columns:
+        def format_color(color_str):
+            if pd.isna(color_str) or color_str == '':
+                return ''
+            try:
+                # Handle if it's a JSON string
+                if isinstance(color_str, str):
+                    # Remove extra quotes and brackets
+                    if color_str.startswith('[') or color_str.startswith('{'):
+                        colors = json.loads(color_str)
+                        if isinstance(colors, list):
+                            # Clean up each color code by removing extra quotes
+                            cleaned_colors = [c.replace('"', '') for c in colors]
+                            return ','.join(cleaned_colors)
+                    # Clean up the string directly if it already looks like a formatted array
+                    elif '["' in color_str or '""' in color_str:
+                        # Remove brackets, extra quotes and spaces
+                        cleaned_str = color_str.replace('[', '').replace(']', '').replace('"', '').replace(' ', '')
+                        return cleaned_str
+                # If it's not a string that needs processing, return as is
+                return str(color_str)
+            except:
+                return str(color_str)
+        
+        export_df['colour'] = export_df['colour'].apply(format_color)
+    
+    # Also handle 'color' column if it exists (alternative spelling)
+    if 'color' in export_df.columns:
+        def format_color(color_str):
+            if pd.isna(color_str) or color_str == '':
+                return ''
+            try:
+                # Handle if it's a JSON string
+                if isinstance(color_str, str):
+                    # Remove extra quotes and brackets
+                    if color_str.startswith('[') or color_str.startswith('{'):
+                        colors = json.loads(color_str)
+                        if isinstance(colors, list):
+                            # Clean up each color code by removing extra quotes
+                            cleaned_colors = [c.replace('"', '') for c in colors]
+                            return ','.join(cleaned_colors)
+                    # Clean up the string directly if it already looks like a formatted array
+                    elif '["' in color_str or '""' in color_str:
+                        # Remove brackets, extra quotes and spaces
+                        cleaned_str = color_str.replace('[', '').replace(']', '').replace('"', '').replace(' ', '')
+                        return cleaned_str
+                # If it's not a string that needs processing, return as is
+                return str(color_str)
+            except:
+                return str(color_str)
+        
+        export_df['color'] = export_df['color'].apply(format_color)
+    
     # Export button
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     export_filename = f"product_export_{timestamp}.csv"
     
-    csv_data = export_to_csv(filtered_df)
+    csv_data = export_to_csv(export_df)
     
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:

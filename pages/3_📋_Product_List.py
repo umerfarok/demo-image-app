@@ -77,58 +77,87 @@ elif st.session_state.view_product_id is not None:
     # Display product details with improved layout
     st.subheader(f"Product Details: {product['product_name']}")
     
-    # Create tabs for different sections of product information
-    tab1, tab2 = st.tabs(["Basic Info", "Additional Details"])
+    # Create a single column layout for the simplified view
+    col1, col2 = st.columns([3, 2])
     
-    with tab1:
-        col1, col2 = st.columns([3, 2])
+    with col1:
+        # Format size and color fields
+        size_value = 'N/A'
+        color_value = 'N/A'
         
-        with col1:
-            st.markdown(f"### {product['product_name']}")
-            st.markdown(f"**SKU:** {product['item_sku']}")
-            st.markdown(f"**Type:** {product['parent_child']}")
-            
-            if product['parent_child'] == 'Child':
-                st.markdown(f"**Parent SKU:** {product['parent_sku']}")
-            
-            st.markdown(f"**Size:** {product['size'] or 'N/A'}")
-            st.markdown(f"**Color:** {product['color'] or 'N/A'}")
-            st.markdown(f"**Price:** ${product['price']}")
-            st.markdown(f"**Quantity:** {product['quantity']}")
-        
-        with col2:
-            # Display product image if available
-            if product['image_url']:
-                if is_s3_url(product['image_url']):
-                    # S3 image
-                    img = get_image_from_s3_url(product['image_url'])
-                    if img:
-                        st.image(img, caption=f"Image for {product['product_name']}", use_column_width=True)
+        # Process Size field - extract names and join with commas
+        if product['size']:
+            try:
+                import json
+                # Try to parse as JSON if it's a string representation of an array
+                if isinstance(product['size'], str) and (product['size'].startswith('[') or product['size'].startswith('{')):
+                    size_data = json.loads(product['size'])
+                    if isinstance(size_data, list):
+                        if all(isinstance(item, dict) and 'name' in item for item in size_data):
+                            # Extract just the name values from each dictionary
+                            size_names = [item['name'] for item in size_data]
+                            size_value = ', '.join(size_names)
+                        else:
+                            # For simple string values in the array
+                            size_value = ', '.join(str(item) for item in size_data)
                     else:
-                        st.markdown("📷 *Image unavailable or could not be loaded*")
+                        size_value = str(product['size'])
                 else:
-                    # Local image
-                    if os.path.exists(product['image_url']):
-                        st.image(product['image_url'], caption=f"Image for {product['product_name']}", use_column_width=True)
+                    size_value = str(product['size'])
+            except:
+                size_value = str(product['size'])
+        
+        # Process Color field - join array values with commas  
+        if product['color']:
+            try:
+                import json
+                # Try to parse as JSON if it's a string representation of an array
+                if isinstance(product['color'], str) and product['color'].startswith('['):
+                    color_data = json.loads(product['color'])
+                    if isinstance(color_data, list):
+                        color_value = ', '.join(str(color) for color in color_data)
                     else:
-                        st.markdown("📷 *Image file not found*")
-            else:
-                st.markdown("📷 *No image available*")
+                        color_value = str(product['color'])
+                else:
+                    color_value = str(product['color'])
+            except:
+                color_value = str(product['color'])
+                
+        # Create a dictionary for product details
+        product_details = {
+            "Product Name": product['product_name'],
+            "Size": size_value,
+            "Color": color_value,
+            "Price": f"${product['price']}",
+            "Category": product['category']
+        }
+        
+        # Add created_at if available
+        if 'created_at' in product and product['created_at']:
+            product_details["Created at"] = product['created_at']
+            
+        # Convert dictionary to DataFrame for table display
+        details_df = pd.DataFrame(product_details.items(), columns=['Attribute', 'Value'])
+        st.table(details_df)
     
-    with tab2:
-        st.markdown(f"**Category:** {product['category'] or 'N/A'}")
-        st.markdown(f"**Tax Class:** {product['tax_class'] or 'N/A'}")
-        
-        if product['marketplace_title']:
-            st.markdown("**Marketplace Title:**")
-            st.markdown(f"*{product['marketplace_title']}*")
-        
-        # Add more details if available
-        for col in product:
-            if col not in ['id', 'product_name', 'item_sku', 'parent_child', 'parent_sku', 
-                          'size', 'color', 'price', 'quantity', 'category', 'tax_class', 
-                          'marketplace_title', 'image_url'] and product[col]:
-                st.markdown(f"**{col.replace('_', ' ').title()}:** {product[col]}")
+    with col2:
+        # Display product image if available
+        if product['image_url']:
+            if is_s3_url(product['image_url']):
+                # S3 image
+                img = get_image_from_s3_url(product['image_url'])
+                if img:
+                    st.image(img, caption=f"Image for {product['product_name']}", use_column_width=True)
+                else:
+                    st.markdown("📷 *Image unavailable or could not be loaded*")
+            else:
+                # Local image
+                if os.path.exists(product['image_url']):
+                    st.image(product['image_url'], caption=f"Image for {product['product_name']}", use_column_width=True)
+                else:
+                    st.markdown("📷 *Image file not found*")
+        else:
+            st.markdown("📷 *No image available*")
 
 else:
     # Add search and filter functionality - Only shown when not viewing a single product
