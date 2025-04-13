@@ -443,6 +443,25 @@ class Database:
         except Error as e:
             st.error(f"Error deleting product {product_id}: {e}")
             return False
+
+    def delete_generated_product(self, product_id):
+        """
+        Delete a generated product
+        
+        Args:
+            product_id (int): Generated Product ID to delete
+            
+        Returns:
+            bool: True if deletion successful, False otherwise
+        """
+        try:
+            query = "DELETE FROM generated_products WHERE id = %s"
+            self.cursor.execute(query, (product_id,))
+            self.connection.commit()
+            return True
+        except Error as e:
+            st.error(f"Error deleting generated product {product_id}: {e}")
+            return False
     
     def get_stats(self):
         """
