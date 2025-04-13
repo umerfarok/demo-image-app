@@ -240,7 +240,191 @@ class Database:
         except Error as e:
             st.error(f"Error updating product {product_id}: {e}")
             return False
+            
+    def create_generated_product(self, product_data):
+        """
+        Add a new generated product to the database
+        
+        Args:
+            product_data (dict): Generated product data containing:
+                - product_name: Name of the product
+                - design_sku: Unique SKU for the design
+                - marketplace_title: Title for marketplace listings
+                - size: JSON string of available sizes
+                - color: JSON string of available colors (hex values)
+                - original_design_url: URL to the original design in S3
+                - mockup_urls: JSON string mapping color hex codes to S3 mockup URLs
+                - parent_product_id: Optional reference to a parent product
+            
+        Returns:
+            int: Product ID if inserted successfully, None otherwise
+        """
+        try:
+            # Check if the table exists, create it if not
+            self._ensure_generated_products_table()
+            
+            # Validate required fields
+            if 'product_name' not in product_data:
+                st.error("Missing required field: product_name")
+                return None
+                
+            # Handle case where item_sku is provided instead of design_sku
+            if 'design_sku' not in product_data and 'item_sku' in product_data:
+                product_data['design_sku'] = product_data['item_sku']
+                st.info(f"Using item_sku as design_sku: {product_data['design_sku']}")
+            
+            if 'design_sku' not in product_data:
+                st.error("Missing required field: design_sku")
+                return None
+            
+            query = """
+            INSERT INTO generated_products (
+                product_name, design_sku, marketplace_title, size, color,
+                original_design_url, mockup_urls, is_published, parent_product_id
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """
+            
+            # Default to not published
+            is_published = product_data.get('is_published', False)
+            
+            values = (
+                product_data['product_name'],
+                product_data['design_sku'],
+                product_data.get('marketplace_title', ''),
+                product_data.get('size', '[]'),
+                product_data.get('color', '[]'),
+                product_data.get('original_design_url', ''),
+                product_data.get('mockup_urls', '{}'),
+                is_published,
+                product_data.get('parent_product_id', None)
+            )
+            
+            self.cursor.execute(query, values)
+            self.connection.commit()
+            new_id = self.cursor.lastrowid
+            st.success(f"Generated product '{product_data['product_name']}' added with ID: {new_id}")
+            return new_id
+        except KeyError as e:
+            st.error(f"Error adding generated product - missing required field: {e}")
+            return None
+        except Error as e:
+            st.error(f"Error adding generated product: {e}")
+            return None
     
+    def update_generated_product(self, product_id, product_data):
+        """
+        Update a generated product
+        
+        Args:
+            product_id (int): Generated Product ID to update
+            product_data (dict): Updated product data
+            
+        Returns:
+            bool: True if update successful, False otherwise
+        """
+        try:
+            query = """
+            UPDATE generated_products SET
+                product_name = %s,
+                design_sku = %s,
+                marketplace_title = %s,
+                size = %s,
+                color = %s,
+                original_design_url = %s,
+                mockup_urls = %s,
+                is_published = %s,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = %s
+            """
+            
+            # Default to current published state if not specified
+            is_published = product_data.get('is_published', False)
+            
+            values = (
+                product_data['product_name'],
+                product_data['design_sku'],
+                product_data.get('marketplace_title', ''),
+                product_data.get('size', '[]'),
+                product_data.get('color', '[]'),
+                product_data.get('original_design_url', ''),
+                product_data.get('mockup_urls', '{}'),
+                is_published,
+                product_id
+            )
+            
+            self.cursor.execute(query, values)
+            self.connection.commit()
+            return True
+        except Error as e:
+            st.error(f"Error updating generated product {product_id}: {e}")
+            return False
+    
+    def get_all_generated_products(self):
+        """
+        Get all generated products from database
+        
+        Returns:
+            DataFrame: Generated products as pandas DataFrame or None if error
+        """
+        try:
+            # Ensure the table exists
+            self._ensure_generated_products_table()
+            
+            query = "SELECT * FROM generated_products ORDER BY created_at DESC"
+            self.cursor.execute(query)
+            result = self.cursor.fetchall()
+            return pd.DataFrame(result) if result else pd.DataFrame()
+        except Error as e:
+            st.error(f"Error retrieving generated products: {e}")
+            return pd.DataFrame()
+    
+    def get_generated_product(self, product_id):
+        """
+        Get a specific generated product by ID
+        
+        Args:
+            product_id (int): Generated Product ID
+            
+        Returns:
+            dict: Product data or None if not found
+        """
+        try:
+            query = "SELECT * FROM generated_products WHERE id = %s"
+            self.cursor.execute(query, (product_id,))
+            return self.cursor.fetchone()
+        except Error as e:
+            st.error(f"Error retrieving generated product {product_id}: {e}")
+            return None
+            
+    def _ensure_generated_products_table(self):
+        """Create the generated_products table if it doesn't exist"""
+        try:
+            create_table_query = """
+            CREATE TABLE IF NOT EXISTS generated_products (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                product_name VARCHAR(255) NOT NULL,
+                design_sku VARCHAR(100) NOT NULL UNIQUE,
+                marketplace_title TEXT NULL,
+                size TEXT NULL,
+                color TEXT NULL,
+                original_design_url TEXT NULL,
+                mockup_urls TEXT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                is_published BOOLEAN DEFAULT FALSE,
+                parent_product_id INT NULL,
+                
+                INDEX idx_design_sku (design_sku),
+                INDEX idx_created_at (created_at),
+                INDEX idx_is_published (is_published),
+                INDEX idx_parent_product_id (parent_product_id)
+            )
+            """
+            self.cursor.execute(create_table_query)
+            self.connection.commit()
+        except Error as e:
+            st.warning(f"Table creation notice: {e}")
+
     def delete_product(self, product_id):
         """
         Delete a product
@@ -292,6 +476,37 @@ class Database:
                 'parent_count': 0,
                 'image_count': 0
             }
+    
+    def check_if_sku_exists(self, design_sku):
+        """
+        Check if a design SKU already exists in the database
+        
+        Args:
+            design_sku (str): The design SKU to check
+            
+        Returns:
+            bool: True if the SKU exists, False otherwise
+        """
+        try:
+            # Create a cursor
+            cursor = self.conn.cursor()
+            
+            # Execute query to check if SKU exists in generated_products table
+            cursor.execute(
+                "SELECT COUNT(*) FROM generated_products WHERE design_sku = %s", 
+                (design_sku,)
+            )
+            
+            # Get the result
+            count = cursor.fetchone()[0]
+            
+            # Close cursor
+            cursor.close()
+            
+            return count > 0
+        except Exception as e:
+            print(f"Error checking if SKU exists: {e}")
+            return False
     
     def __del__(self):
         """Close database connection when object is destroyed"""
