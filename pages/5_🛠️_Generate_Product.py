@@ -22,6 +22,7 @@ if 'mockup_results' not in st.session_state:
 
 # Get all products from database
 products_df = db.get_all_products()
+print("Products DataFrame:", products_df)
 
 # Initialize session state for selected product
 if 'selected_product_id' not in st.session_state:
