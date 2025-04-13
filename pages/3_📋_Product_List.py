@@ -24,241 +24,297 @@ if 'confirm_delete' not in st.session_state:
     st.session_state.confirm_delete = False
 if 'product_to_delete' not in st.session_state:
     st.session_state.product_to_delete = None
+    
+# Initialize session state for viewing a single product
+if 'view_product_id' not in st.session_state:
+    st.session_state.view_product_id = None
+
+# Initialize pagination state
+if 'current_page' not in st.session_state:
+    st.session_state.current_page = 1
+if 'items_per_page' not in st.session_state:
+    st.session_state.items_per_page = 5
 
 # Get all products from database
 products_df = db.get_all_products()
 
-# Add search and filter functionality
-st.subheader("Search & Filter")
-
-col1, col2, col3 = st.columns(3)
-
-with col1:
-    search_term = st.text_input("Search by name or SKU", "")
-
-with col2:
-    if not products_df.empty and 'parent_child' in products_df.columns:
-        product_type_filter = st.selectbox(
-            "Filter by type",
-            options=["All", "Parent", "Child"],
-            index=0
-        )
-    else:
-        product_type_filter = "All"
-
-with col3:
-    if not products_df.empty and 'category' in products_df.columns:
-        categories = products_df['category'].dropna().unique().tolist()
-        categories = ["All"] + categories
-        category_filter = st.selectbox("Filter by category", categories)
-    else:
-        category_filter = "All"
-
-# Apply filters
-filtered_df = products_df.copy()
-
-# Ensure numeric columns have proper data types
-if not filtered_df.empty:
-    # Convert price to float with error handling
-    filtered_df['price'] = pd.to_numeric(filtered_df['price'], errors='coerce').fillna(0.0)
-    # Convert quantity to integer with error handling
-    filtered_df['quantity'] = pd.to_numeric(filtered_df['quantity'], errors='coerce').fillna(0).astype(int)
-
-# Search filter
-if search_term:
-    search_mask = (
-        filtered_df['product_name'].str.contains(search_term, case=False, na=False) | 
-        filtered_df['item_sku'].str.contains(search_term, case=False, na=False)
-    )
-    filtered_df = filtered_df[search_mask]
-
-# Product type filter
-if product_type_filter != "All" and not filtered_df.empty:
-    filtered_df = filtered_df[filtered_df['parent_child'] == product_type_filter]
-
-# Category filter
-if category_filter != "All" and not filtered_df.empty:
-    filtered_df = filtered_df[filtered_df['category'] == category_filter]
-
-# Display products
-if filtered_df.empty:
-    st.info("No products found matching your criteria.")
-else:
-    # Display product table with limited columns
-    display_cols = ['id', 'product_name', 'item_sku', 'parent_child', 'size', 'color', 'price', 'quantity']
+# Handle delete confirmation modal
+if st.session_state.confirm_delete:
+    product_id = st.session_state.product_to_delete
+    product = db.get_product(product_id)
     
-    # Ensure all columns are present
-    for col in display_cols:
-        if col not in filtered_df.columns:
-            filtered_df[col] = ""
+    # Create modal-like dialog with warning style
+    st.warning("⚠️ Delete Confirmation")
+    st.write(f"Are you sure you want to delete **{product['product_name']}**?")
     
-    # Display the table
-    st.dataframe(
-        filtered_df[display_cols],
-        column_config={
-            "id": "ID",
-            "product_name": "Product Name",
-            "item_sku": "SKU",
-            "parent_child": "Type",
-            "size": "Size",
-            "color": "Color",
-            "price": st.column_config.NumberColumn("Price", format="$%.2f"),
-            "quantity": st.column_config.NumberColumn("Quantity", format="%d")
-        },
-        use_container_width=True
-    )
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("Delete", type="primary"):
+            if db.delete_product(product_id):
+                st.session_state.confirm_delete = False
+                st.session_state.product_to_delete = None
+                st.success("Product deleted successfully!")
+                # Refresh the page to reflect changes
+                st.experimental_rerun()
+            else:
+                st.error("Failed to delete product")
+    with col2:
+        if st.button("Cancel"):
+            st.session_state.confirm_delete = False
+            st.session_state.product_to_delete = None
+            st.experimental_rerun()
+
+# Handle view single product
+elif st.session_state.view_product_id is not None:
+    product_id = st.session_state.view_product_id
+    product = db.get_product(product_id)
     
-    # Product detail view
-    st.subheader("Product Details")
+    # Back button
+    if st.button("← Back to Product List"):
+        st.session_state.view_product_id = None
+        st.experimental_rerun()
     
-    # Select a product to view or edit
-    selected_product_id = st.selectbox(
-        "Select a product to view or edit",
-        options=filtered_df['id'].tolist(),
-        format_func=lambda x: f"{x} - {filtered_df[filtered_df['id'] == x]['product_name'].iloc[0]}"
-    )
+    # Display product details with improved layout
+    st.subheader(f"Product Details: {product['product_name']}")
     
-    # Display selected product details
-    if selected_product_id:
-        product = db.get_product(selected_product_id)
+    # Create tabs for different sections of product information
+    tab1, tab2 = st.tabs(["Basic Info", "Additional Details"])
+    
+    with tab1:
+        col1, col2 = st.columns([3, 2])
         
-        if product:
-            # Create tabs for viewing and editing
-            view_tab, edit_tab = st.tabs(["View", "Edit"])
+        with col1:
+            st.markdown(f"### {product['product_name']}")
+            st.markdown(f"**SKU:** {product['item_sku']}")
+            st.markdown(f"**Type:** {product['parent_child']}")
             
-            with view_tab:
-                col1, col2 = st.columns([3, 2])
-                
-                with col1:
-                    st.markdown(f"### {product['product_name']}")
-                    st.markdown(f"**SKU:** {product['item_sku']}")
-                    st.markdown(f"**Type:** {product['parent_child']}")
-                    
-                    if product['parent_child'] == 'Child':
-                        st.markdown(f"**Parent SKU:** {product['parent_sku']}")
-                    
-                    st.markdown(f"**Size:** {product['size'] or 'N/A'}")
-                    st.markdown(f"**Color:** {product['color'] or 'N/A'}")
-                    st.markdown(f"**Price:** ${product['price']}")
-                    st.markdown(f"**Quantity:** {product['quantity']}")
-                    st.markdown(f"**Category:** {product['category'] or 'N/A'}")
-                    st.markdown(f"**Tax Class:** {product['tax_class'] or 'N/A'}")
-                    
-                    if product['marketplace_title']:
-                        st.markdown("**Marketplace Title:**")
-                        st.markdown(f"*{product['marketplace_title']}*")
-                
-                with col2:
-                    # Display product image if available
-                    if product['image_url']:
-                        if is_s3_url(product['image_url']):
-                            # S3 image
-                            img = get_image_from_s3_url(product['image_url'])
-                            if img:
-                                st.image(img, caption=f"Image for {product['product_name']}", use_column_width=True)
-                            else:
-                                st.markdown("📷 *Image unavailable or could not be loaded*")
-                        else:
-                            # Local image
-                            if os.path.exists(product['image_url']):
-                                st.image(product['image_url'], caption=f"Image for {product['product_name']}", use_column_width=True)
-                            else:
-                                st.markdown("📷 *Image file not found*")
+            if product['parent_child'] == 'Child':
+                st.markdown(f"**Parent SKU:** {product['parent_sku']}")
+            
+            st.markdown(f"**Size:** {product['size'] or 'N/A'}")
+            st.markdown(f"**Color:** {product['color'] or 'N/A'}")
+            st.markdown(f"**Price:** ${product['price']}")
+            st.markdown(f"**Quantity:** {product['quantity']}")
+        
+        with col2:
+            # Display product image if available
+            if product['image_url']:
+                if is_s3_url(product['image_url']):
+                    # S3 image
+                    img = get_image_from_s3_url(product['image_url'])
+                    if img:
+                        st.image(img, caption=f"Image for {product['product_name']}", use_column_width=True)
                     else:
-                        st.markdown("📷 *No image available*")
+                        st.markdown("📷 *Image unavailable or could not be loaded*")
+                else:
+                    # Local image
+                    if os.path.exists(product['image_url']):
+                        st.image(product['image_url'], caption=f"Image for {product['product_name']}", use_column_width=True)
+                    else:
+                        st.markdown("📷 *Image file not found*")
+            else:
+                st.markdown("📷 *No image available*")
+    
+    with tab2:
+        st.markdown(f"**Category:** {product['category'] or 'N/A'}")
+        st.markdown(f"**Tax Class:** {product['tax_class'] or 'N/A'}")
+        
+        if product['marketplace_title']:
+            st.markdown("**Marketplace Title:**")
+            st.markdown(f"*{product['marketplace_title']}*")
+        
+        # Add more details if available
+        for col in product:
+            if col not in ['id', 'product_name', 'item_sku', 'parent_child', 'parent_sku', 
+                          'size', 'color', 'price', 'quantity', 'category', 'tax_class', 
+                          'marketplace_title', 'image_url'] and product[col]:
+                st.markdown(f"**{col.replace('_', ' ').title()}:** {product[col]}")
+
+else:
+    # Add search and filter functionality - Only shown when not viewing a single product
+    st.subheader("Search & Filter")
+
+    col1, col2 = st.columns(2)  # Changed from 3 columns to 2
+
+    with col1:
+        search_term = st.text_input("Search by name or SKU", "")
+
+    with col2:
+        if not products_df.empty and 'category' in products_df.columns:
+            categories = products_df['category'].dropna().unique().tolist()
+            categories = ["All"] + categories
+            category_filter = st.selectbox("Filter by category", categories)
+        else:
+            category_filter = "All"
+
+    # Add CSV export button
+    col1, col2 = st.columns([1, 3])
+    with col1:
+        if st.button("Generate CSV File for All Product"):
+            st.session_state.export_all = True
+            st.experimental_rerun()
+
+    # Apply filters
+    filtered_df = products_df.copy()
+
+    # Ensure numeric columns have proper data types
+    if not filtered_df.empty:
+        # Convert price to float with error handling
+        filtered_df['price'] = pd.to_numeric(filtered_df['price'], errors='coerce').fillna(0.0)
+        # Convert quantity to integer with error handling
+        filtered_df['quantity'] = pd.to_numeric(filtered_df['quantity'], errors='coerce').fillna(0).astype(int)
+
+    # Search filter
+    if search_term:
+        search_mask = (
+            filtered_df['product_name'].str.contains(search_term, case=False, na=False) | 
+            filtered_df['item_sku'].str.contains(search_term, case=False, na=False)
+        )
+        filtered_df = filtered_df[search_mask]
+
+    # Category filter
+    if category_filter != "All" and not filtered_df.empty:
+        filtered_df = filtered_df[filtered_df['category'] == category_filter]
+
+    # Display products
+    if filtered_df.empty:
+        st.info("No products found matching your criteria.")
+    else:
+        # Calculate pagination values
+        total_items = len(filtered_df)
+        total_pages = (total_items + st.session_state.items_per_page - 1) // st.session_state.items_per_page
+        
+        # Ensure current page is valid
+        if st.session_state.current_page > total_pages:
+            st.session_state.current_page = total_pages
+        if st.session_state.current_page < 1:
+            st.session_state.current_page = 1
+        
+        # Calculate start and end indices for current page
+        start_idx = (st.session_state.current_page - 1) * st.session_state.items_per_page
+        end_idx = min(start_idx + st.session_state.items_per_page, total_items)
+        
+        # Get products for the current page
+        page_df = filtered_df.iloc[start_idx:end_idx]
+        
+        # Display custom product table with image, title, and action columns
+        st.subheader("Products")
+        
+        # Create custom table header
+        cols = st.columns([1, 3, 1])
+        with cols[0]:
+            st.markdown("**Image**")
+        with cols[1]:
+            st.markdown("**Product Title**")
+        with cols[2]:
+            st.markdown("**Action**")
             
-            with edit_tab:
-                with st.form(key=f"edit_product_{selected_product_id}"):
-                    col1, col2 = st.columns(2)
-                    
-                    with col1:
-                        edited_name = st.text_input("Product Name", value=product['product_name'])
-                        edited_sku = st.text_input("Item SKU", value=product['item_sku'])
-                        edited_parent_child = st.selectbox(
-                            "Parent/Child",
-                            options=["Parent", "Child"],
-                            index=0 if product['parent_child'] == "Parent" else 1
-                        )
-                        edited_parent_sku = st.text_input("Parent SKU", value=product['parent_sku'] or "")
-                    
-                    with col2:
-                        edited_size = st.text_input("Size", value=product['size'] or "")
-                        edited_color = st.text_input("Color", value=product['color'] or "")
-                        
-                        # Add safe conversion for quantity
-                        try:
-                            quantity_value = int(product['quantity'])
-                        except (ValueError, TypeError):
-                            quantity_value = 0
-                        edited_quantity = st.number_input("Quantity", value=quantity_value, min_value=0)
-                        
-                        # Add safe conversion for price
-                        try:
-                            price_value = float(product['price'])
-                        except (ValueError, TypeError):
-                            price_value = 0.0
-                        edited_price = st.number_input("Price", value=price_value, format="%.2f", min_value=0.0)
-                    
-                    edited_category = st.text_input("Category", value=product['category'] or "")
-                    edited_tax_class = st.text_input("Tax Class", value=product['tax_class'] or "")
-                    edited_marketplace_title = st.text_area("Marketplace Title", value=product['marketplace_title'] or "")
-                    
-                    # Upload new image
-                    new_image = st.file_uploader("Upload New Image (leave empty to keep current)", type=["png", "jpg", "jpeg"])
-                    
-                    submit = st.form_submit_button("Update Product")
-                    
-                    # Change delete button to a form submit button to trigger confirmation
-                    delete = st.form_submit_button("Delete Product", type="primary")
-                    
-                    if submit:
-                        # Handle image upload if provided
-                        image_url = product['image_url']
-                        
-                        # Update product in database
-                        updated_product = {
-                            'product_name': edited_name,
-                            'item_sku': edited_sku,
-                            'parent_child': edited_parent_child,
-                            'parent_sku': edited_parent_sku if edited_parent_child == "Child" else None,
-                            'size': edited_size,
-                            'color': edited_color,
-                            'image_url': image_url,
-                            'marketplace_title': edited_marketplace_title,
-                            'category': edited_category,
-                            'tax_class': edited_tax_class,
-                            'quantity': edited_quantity,
-                            'price': edited_price
-                        }
-                        
-                        if db.update_product(selected_product_id, updated_product):
-                            st.success("Product updated successfully!")
-                            st.experimental_rerun()
+        # Add separator line
+        st.markdown("<hr style='margin-top: 0; margin-bottom: 10px;'>", unsafe_allow_html=True)
+        
+        # Iterate through products and display in rows
+        for idx, row in page_df.iterrows():
+            product_id = row['id']
+            product_name = row['product_name']
+            
+            cols = st.columns([1, 3, 1])
+            
+            # Image column
+            with cols[0]:
+                if row['image_url']:
+                    if is_s3_url(row['image_url']):
+                        # S3 image
+                        img = get_image_from_s3_url(row['image_url'])
+                        if img:
+                            st.image(img, width=70)
                         else:
-                            st.error("Failed to update product")
-                    
-                    if delete:
-                        # Set session state to show confirmation instead of performing delete directly
-                        st.session_state.confirm_delete = True
-                        st.session_state.product_to_delete = selected_product_id
+                            st.markdown("📷")
+                    else:
+                        # Local image
+                        if os.path.exists(row['image_url']):
+                            st.image(row['image_url'], width=70)
+                        else:
+                            st.markdown("📷")
+                else:
+                    st.markdown("📷")
+            
+            # Product name column
+            with cols[1]:
+                st.write(product_name)
+            
+            # Action column
+            with cols[2]:
+                view_col, delete_col = st.columns(2)
+                
+                with view_col:
+                    if st.button("View", key=f"view_{product_id}"):
+                        st.session_state.view_product_id = product_id
                         st.experimental_rerun()
                 
-                # Delete confirmation - outside the form
-                if st.session_state.confirm_delete and st.session_state.product_to_delete == selected_product_id:
-                    st.warning("Are you sure you want to delete this product? This action cannot be undone.")
-                    
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        if st.button("Yes, Delete Product"):
-                            if db.delete_product(selected_product_id):
-                                st.session_state.confirm_delete = False
-                                st.session_state.product_to_delete = None
-                                st.success("Product deleted successfully!")
+                with delete_col:
+                    if st.button("Delete", key=f"delete_{product_id}"):
+                        st.session_state.confirm_delete = True
+                        st.session_state.product_to_delete = product_id
+                        st.experimental_rerun()
+            
+            # Add separator line between rows
+            st.markdown("<hr style='margin: 5px 0;'>", unsafe_allow_html=True)
+        
+        # Add pagination controls
+        st.write("")  # Add some spacing
+        
+        # Define pagination UI
+        col1, col2, col3 = st.columns([1, 3, 1])
+        
+        with col1:
+            prev_disabled = (st.session_state.current_page <= 1)
+            if st.button("← Previous", disabled=prev_disabled, key="prev_button"):
+                st.session_state.current_page -= 1
+                st.experimental_rerun()
+                
+        with col2:
+            # Show page numbers
+            page_numbers = []
+            
+            # Always show first page
+            if st.session_state.current_page > 3:
+                page_numbers.append(1)
+                if st.session_state.current_page > 4:
+                    page_numbers.append("...")
+            
+            # Show current page and surrounding pages
+            for i in range(max(1, st.session_state.current_page - 1), 
+                          min(total_pages + 1, st.session_state.current_page + 2)):
+                page_numbers.append(i)
+            
+            # Always show last page
+            if st.session_state.current_page < total_pages - 2:
+                if st.session_state.current_page < total_pages - 3:
+                    page_numbers.append("...")
+                page_numbers.append(total_pages)
+            
+            # Create the page selector
+            page_cols = st.columns(len(page_numbers))
+            
+            for i, page_col in enumerate(page_cols):
+                with page_col:
+                    if page_numbers[i] == "...":
+                        st.write("...")
+                    else:
+                        page_num = page_numbers[i]
+                        if page_num == st.session_state.current_page:
+                            # Highlight current page
+                            st.markdown(f"**{page_num}**")
+                        else:
+                            if st.button(f"{page_num}", key=f"page_{page_num}"):
+                                st.session_state.current_page = page_num
                                 st.experimental_rerun()
-                            else:
-                                st.error("Failed to delete product")
-                    with col2:
-                        if st.button("Cancel"):
-                            st.session_state.confirm_delete = False
-                            st.session_state.product_to_delete = None
-                            st.experimental_rerun()
+        
+        with col3:
+            next_disabled = (st.session_state.current_page >= total_pages)
+            if st.button("Next →", disabled=next_disabled, key="next_button"):
+                st.session_state.current_page += 1
+                st.experimental_rerun()
+        
+        # Display page information
+        st.write(f"Page {st.session_state.current_page} of {total_pages} | Showing {start_idx+1}-{end_idx} of {total_items} products")
