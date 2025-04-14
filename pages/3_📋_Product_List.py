@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import os
-# from utils.auth import check_password
+from utils.auth import check_password
 from utils.database import get_database_connection
 from PIL import Image
 import io
@@ -11,8 +11,8 @@ from utils.api import is_s3_url
 from utils.s3_storage import get_image_from_s3_url
 
 # Verify authentication
-# if not check_password():
-#     st.stop()
+if not check_password():
+    st.stop()
 
 # Page configuration
 st.title("📋 Product List")
@@ -78,9 +78,8 @@ if st.session_state.confirm_delete:
             success = False
             if product_type == "Regular":
                 success = db.delete_product(product_id)
-            else:  # Add a delete_generated_product method if needed
-                # Assume this method exists or needs to be created
-                success = db.delete_product(product_id)  # Replace with appropriate method
+            else:  # Generated product
+                success = db.delete_generated_product(product_id)  # Use the correct method for generated products
             
             if success:
                 st.session_state.confirm_delete = False

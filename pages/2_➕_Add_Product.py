@@ -4,10 +4,15 @@ import json
 import random
 import string
 from utils.database import get_database_connection
+from utils.auth import check_password
 from utils.api import save_uploaded_image, generate_mockup, is_s3_url
 from utils.s3_storage import get_image_from_s3_url
 from utils.dynamic_mockups import get_mockups
 import time
+
+# Verify authentication
+if not check_password():
+    st.stop()
 
 # Check if we need to reset the form (after successful submission)
 if 'reset_form' in st.session_state and st.session_state.reset_form:
