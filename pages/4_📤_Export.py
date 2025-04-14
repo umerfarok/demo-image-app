@@ -2,20 +2,23 @@ import streamlit as st
 import pandas as pd
 import json
 import io  # Add this import
-# from utils.auth import check_password
+from utils.auth import check_password
 from utils.database import get_database_connection
 from utils.export import export_to_csv
 import datetime
 
 # Verify authentication
-# if not check_password():
-#     st.stop()
+if not check_password():
+    st.stop()
 
 # Page configuration
 st.title("📤 Export Products")
 
 # Initialize database connection
 db = get_database_connection()
+
+# Initialize export_df as empty DataFrame to prevent NameError
+export_df = pd.DataFrame()
 
 # Check if we have data from Product List page or need to load from database
 if 'export_csv_data' in st.session_state:
@@ -41,6 +44,7 @@ else:
 
     if products_df.empty:
         st.info("No products found to export. Please add products first.")
+        # export_df remains an empty DataFrame here
     else:
         # Add filters for export
         st.subheader("Export Options")

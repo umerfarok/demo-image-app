@@ -3,8 +3,14 @@ import os
 import requests
 import json
 from dotenv import load_dotenv
+from utils.auth import check_password
 from utils.database import get_database_connection
 from utils.s3_storage import upload_image_file_to_s3, check_s3_connection
+
+# Verify authentication
+if not check_password():
+    st.stop()
+
 
 # Load environment variables from . 
 load_dotenv()

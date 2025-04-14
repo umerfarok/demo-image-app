@@ -27,6 +27,7 @@ with st.sidebar:
     st.markdown("### Navigation")
     st.markdown("- 🏠 Home - Dashboard & Stats")
     st.markdown("- ➕ Add Product - Create new items")
+    st.markdown("- 📊 Product Generator - Generate products")
     st.markdown("- 📋 Product List - Manage products")
     st.markdown("- 📤 Export - Export to CSV")
     
@@ -41,8 +42,8 @@ st.title("Product Generator Dashboard")
 
 # Welcome message with card styling
 st.markdown("""
-<div style="background-color: black; padding: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
-    <h2 style="margin-top:0">Welcome to the Product Generator</h2>
+<div style="background-color: black; color: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">
+    <h2 style="margin-top:0 ">Welcome to the Product Generator</h2>
     <p>This application allows you to:</p>
     <ul>
         <li>Create product mockups using the DynamicMockups API</li>
@@ -57,7 +58,7 @@ st.markdown("""
 # Quick links
 st.subheader("Quick Start")
 
-col1, col2, col3 = st.columns(3)
+col1, col2, col3, col4 = st.columns(4)
 
 with col1:
     st.markdown("""
@@ -90,6 +91,17 @@ with col3:
     """, unsafe_allow_html=True)
     if st.button("Go to Export", key="export_btn"):
         st.experimental_set_query_params(page="export")
+        st.experimental_rerun()
+
+with col4:
+    st.markdown("""
+    <div class="stat-card" style="border-left: 5px solid #f6c23e;">
+        <h3 style="margin-top:0">Generate Products</h3>
+        <p>Generate product variants</p>
+    </div>
+    """, unsafe_allow_html=True)
+    if st.button("Go to Product Generator", key="generate_btn"): 
+        st.experimental_set_query_params(page="product_generator")
         st.experimental_rerun()
 
 # Create necessary directories if they don't exist
