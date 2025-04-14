@@ -258,6 +258,15 @@ if 'preview2_selected_color' not in st.session_state:
 if 'preview3_selected_color' not in st.session_state:
     st.session_state.preview3_selected_color = None
 
+# Initialize session state for tracking design image
+if 'design_image_data' not in st.session_state:
+    st.session_state.design_image_data = None
+
+def on_file_upload():
+    """Callback for when a file is uploaded"""
+    if st.session_state.design_image is not None:
+        st.session_state.design_image_data = st.session_state.design_image
+
 def generate_product_page():
     st.title("Generate Product")
 
@@ -351,8 +360,14 @@ def generate_product_page():
                         unsafe_allow_html=True
                     )
 
-        # File uploader for design image
-        design_image = st.file_uploader("Design Image", type=["png", "jpg", "jpeg"], key="design_image")
+        # Modified file uploader with on_change callback to persist the uploaded file
+        design_image = st.file_uploader("Design Image", type=["png", "jpg", "jpeg"], 
+                                       key="design_image", 
+                                       on_change=on_file_upload)
+        
+        # Use the persisted image if available but not currently selected
+        if design_image is None and st.session_state.design_image_data is not None:
+            design_image = st.session_state.design_image_data
 
         # Show mockup ID and smart object UUID if available
         if st.session_state.selected_product_data and st.session_state.selected_product_data.get('mockup_id'):
