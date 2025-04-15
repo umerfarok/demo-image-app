@@ -5,6 +5,7 @@ import io  # Add this import
 from utils.auth import check_password
 from utils.database import get_database_connection
 from utils.export import export_to_csv
+from utils.color_utils import hex_to_color_name  # Import the new function
 import datetime
 
 # Verify authentication
@@ -182,8 +183,8 @@ else:
                             # Set the image_url to this specific mockup URL
                             new_row['image_url'] = mockup_url
                             
-                            # Extract color without # if it starts with it
-                            color_name = color_code.replace("#", "") if color_code.startswith("#") else color_code
+                            # Convert hex to friendly color name
+                            color_name = hex_to_color_name(color_code)
                             
                             # Set color value for this mockup
                             new_row['colour'] = color_name
@@ -302,7 +303,7 @@ The exported CSV file follows this column structure:
 - **Parent/Child**: Whether this is a parent or child product
 - **Parent SKU**: For child products, the SKU of the parent product
 - **Size**: Product size (if applicable)
-- **Color**: Product color (matched to mockup colors for generated products)
+- **Color**: Product color (automatically converted from hex codes to friendly color names)
 - **Image URL**: URL to the product image or mockup (AWS S3 URL if cloud storage is enabled)
 - **Marketplace Title**: Full product title for marketplace listing
 - **Category**: Category path (uses product name for generated products)
@@ -312,7 +313,7 @@ Additional fields for regular products:
 - **Qty**: Quantity in stock
 - **Price**: Product price
 
-> **Note:** For generated products with mockups, each color variant will have its own row with the corresponding mockup URL, making it easy to create color variations in your e-commerce platform.
+> **Note:** For generated products with mockups, each color variant will have its own row with the corresponding mockup URL, making it easy to create color variations in your e-commerce platform. Hex color codes are automatically converted to friendly color names.
 """)
 
 # New section to explain S3 storage benefits

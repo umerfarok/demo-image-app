@@ -9,6 +9,7 @@ import requests
 import json  # Add import for JSON handling
 from utils.api import is_s3_url
 from utils.s3_storage import get_image_from_s3_url
+from utils.color_utils import hex_to_color_name  # Import the new function
 
 # Verify authentication
 if not check_password():
@@ -292,11 +293,17 @@ else:
                                     new_row['image_url'] = mockup_url
                                     
                                     # Extract color without # if it starts with it
-                                    color_name = color_code.replace("#", "") if color_code.startswith("#") else color_code
+                                    color_code_clean = color_code.replace("#", "") if color_code.startswith("#") else color_code
+                                    
+                                    # Convert hex to friendly color name
+                                    color_name = hex_to_color_name(color_code)
                                     
                                     # Set color value for this mockup
                                     new_row['colour'] = color_name
                                     new_row['color'] = color_name
+                                    
+                                    # Keep the original hex code for reference
+                                    new_row['original_hex'] = color_code_clean
                                     
                                     result_rows.append(new_row)
                                 
@@ -588,6 +595,11 @@ else:
                                             standardized_df.at[idx, 'image_url'] = mockup_data[f"#{alt_color_key}"]
                                         elif alt_color_key in mockup_data:
                                             standardized_df.at[idx, 'image_url'] = mockup_data[alt_color_key]
+                                        
+                                        # Convert any hex color codes to friendly names
+                                        if not pd.isna(standardized_df.at[idx, 'color']) and standardized_df.at[idx, 'color']:
+                                            if standardized_df.at[idx, 'color'].startswith('#') or all(c in '0123456789ABCDEFabcdef' for c in standardized_df.at[idx, 'color']):
+                                                standardized_df.at[idx, 'color'] = hex_to_color_name(standardized_df.at[idx, 'color'])
                                 except Exception as e:
                                     print(f"Error processing mockup URL for color: {e}")
                     
@@ -734,8 +746,11 @@ else:
                                     # Extract color name without # if it exists
                                     color_name = selected_color.replace("#", "") if selected_color.startswith("#") else selected_color
                                     
+                                    # Convert to user-friendly color name
+                                    friendly_color = hex_to_color_name(selected_color)
+                                    
                                     # Display just one image with color info
-                                    st.image(url, width=70, caption=f"{color_name}")
+                                    st.image(url, width=70, caption=f"{friendly_color}")
                                     
                                 elif isinstance(mockup_data, list) and len(mockup_data) > 0:
                                     # For list type mockups, select one based on index
