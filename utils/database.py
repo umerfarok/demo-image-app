@@ -248,7 +248,7 @@ class Database:
         Args:
             product_data (dict): Generated product data containing:
                 - product_name: Name of the product
-                - design_sku: Unique SKU for the design
+                - item_sku: Unique SKU for the design (was design_sku)
                 - marketplace_title: Title for marketplace listings
                 - size: JSON string of available sizes
                 - color: JSON string of available colors (hex values)
@@ -268,20 +268,37 @@ class Database:
                 st.error("Missing required field: product_name")
                 return None
                 
-            # Handle case where item_sku is provided instead of design_sku
-            if 'design_sku' not in product_data and 'item_sku' in product_data:
-                product_data['design_sku'] = product_data['item_sku']
-                st.info(f"Using item_sku as design_sku: {product_data['design_sku']}")
+            # Handle case where design_sku is provided instead of item_sku
+            if 'item_sku' not in product_data and 'design_sku' in product_data:
+                product_data['item_sku'] = product_data['design_sku']
+                st.info(f"Using design_sku as item_sku: {product_data['item_sku']}")
             
-            if 'design_sku' not in product_data:
-                st.error("Missing required field: design_sku")
+            if 'item_sku' not in product_data:
+                st.error("Missing required field: item_sku")
                 return None
             
+            # Check if SKU already exists to avoid duplicates
+            query = "SELECT COUNT(*) as count FROM generated_products WHERE item_sku = %s"
+            self.cursor.execute(query, (product_data['item_sku'],))
+            result = self.cursor.fetchone()
+            if result and result['count'] > 0:
+                st.warning(f"SKU {product_data['item_sku']} already exists in database. Using it anyway.")
+            
+            # Set parent_sku based on parent_product_id if available
+            parent_sku = product_data.get('parent_sku', '')
+            if not parent_sku and 'parent_product_id' in product_data and product_data['parent_product_id']:
+                # Fetch parent product's SKU
+                parent_query = "SELECT item_sku FROM products WHERE id = %s"
+                self.cursor.execute(parent_query, (product_data['parent_product_id'],))
+                parent_result = self.cursor.fetchone()
+                if parent_result:
+                    parent_sku = parent_result['item_sku']
+                
             query = """
             INSERT INTO generated_products (
                 product_name, parent_sku, marketplace_title, size, color,
-                original_design_url, mockup_urls, is_published, parent_product_id,item_sku,
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                original_design_url, mockup_urls, is_published, parent_product_id, item_sku
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """
             
             # Default to not published
@@ -289,15 +306,15 @@ class Database:
             
             values = (
                 product_data['product_name'],
-                product_data['parent_sku'],
+                parent_sku,  # Use the determined parent_sku
                 product_data.get('marketplace_title', ''),
                 product_data.get('size', '[]'),
                 product_data.get('color', '[]'),
                 product_data.get('original_design_url', ''),
                 product_data.get('mockup_urls', '{}'),
-                product_data.get['item_sku'],
                 is_published,
-                product_data.get('parent_product_id', None)
+                product_data.get('parent_product_id', None),
+                product_data['item_sku']  # Make sure item_sku is included
             )
             
             self.cursor.execute(query, values)

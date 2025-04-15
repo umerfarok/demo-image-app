@@ -43,7 +43,7 @@ CREATE TABLE IF NOT EXISTS generated_products (
     parent_sku VARCHAR(100) NOT NULL,
     item_sku VARCHAR(100) NOT NULL UNIQUE,
     marketplace_title TEXT NULL,
-    parent_child TEXT DEFAULT 'Child'
+    parent_child VARCHAR(10) DEFAULT 'Child',
     size TEXT NULL,                -- Stores JSON array of available sizes
     color TEXT NULL,               -- Stores JSON array of available colors as hex values
     original_design_url TEXT NULL, -- URL to the original design image in S3
@@ -54,7 +54,8 @@ CREATE TABLE IF NOT EXISTS generated_products (
     parent_product_id INT NULL,    -- Optional reference to a parent product
     
     -- Add indexes for better performance
-    INDEX idx_design_sku (design_sku),
+    INDEX idx_item_sku (item_sku),
+    INDEX idx_parent_sku (parent_sku),
     INDEX idx_created_at (created_at),
     INDEX idx_is_published (is_published),
     INDEX idx_parent_product_id (parent_product_id)

@@ -656,11 +656,19 @@ def generate_product_page():
                             # Get product data
                             product_data = st.session_state.product_data_to_save
                             
+                            # Get parent SKU if available
+                            parent_sku = ""
+                            if st.session_state.selected_product_id:
+                                parent_product = db.get_product(st.session_state.selected_product_id)
+                                if parent_product and 'item_sku' in parent_product:
+                                    parent_sku = parent_product['item_sku']
+                            
                             # Create product data dictionary with minimal processing
                             product_dict = {
                                 "product_name": product_data["design_name"],
                                 "marketplace_title": product_data["marketplace_title"],
-                                "item_sku": product_data["design_sku"],  # Use item_sku instead of design_sku for DB field
+                                "item_sku": product_data["design_sku"],  # Use design_sku as item_sku
+                                "parent_sku": parent_sku,  # Set parent_sku from selected product if available
                                 "size": json.dumps(product_data["sizes"]),
                                 "color": json.dumps([color_name_to_hex(color) for color in product_data["colors"]]),
                                 "original_design_url": product_data["original_design_url"],
