@@ -292,9 +292,6 @@ else:
                                     # Set the image_url to this specific mockup URL
                                     new_row['image_url'] = mockup_url
                                     
-                                    # Extract color without # if it starts with it
-                                    color_code_clean = color_code.replace("#", "") if color_code.startswith("#") else color_code
-                                    
                                     # Convert hex to friendly color name
                                     color_name = hex_to_color_name(color_code)
                                     
@@ -302,8 +299,8 @@ else:
                                     new_row['colour'] = color_name
                                     new_row['color'] = color_name
                                     
-                                    # Keep the original hex code for reference
-                                    new_row['original_hex'] = color_code_clean
+                                    # Store original hex code for matching purposes
+                                    new_row['original_hex'] = color_code.replace("#", "") if color_code.startswith("#") else color_code
                                     
                                     result_rows.append(new_row)
                                 
@@ -578,31 +575,57 @@ else:
                                     continue
                                     
                                 try:
-                                    # Extract color value (ignoring # if present)
-                                    color_val = row['color']
-                                    color_key = f"#{color_val}" if not color_val.startswith('#') else color_val
-                                    alt_color_key = color_val.replace('#', '')
-                                    
-                                    # Parse mockup data to get color-specific URL
-                                    if isinstance(mockup_urls, str) and mockup_urls.startswith('{'):
+                                    # Parse mockup data
+                                    if isinstance(mockup_urls, str) and (mockup_urls.startswith('{') or mockup_urls.startswith('[')):
                                         mockup_data = json.loads(mockup_urls)
                                         
-                                        # Try to match the color to get the specific URL
-                                        if color_key in mockup_data:
-                                            standardized_df.at[idx, 'image_url'] = mockup_data[color_key]
-                                        # Try alternative color key format (with or without #)
-                                        elif f"#{alt_color_key}" in mockup_data:
-                                            standardized_df.at[idx, 'image_url'] = mockup_data[f"#{alt_color_key}"]
-                                        elif alt_color_key in mockup_data:
-                                            standardized_df.at[idx, 'image_url'] = mockup_data[alt_color_key]
-                                        
-                                        # Convert any hex color codes to friendly names
-                                        if not pd.isna(standardized_df.at[idx, 'color']) and standardized_df.at[idx, 'color']:
-                                            if standardized_df.at[idx, 'color'].startswith('#') or all(c in '0123456789ABCDEFabcdef' for c in standardized_df.at[idx, 'color']):
-                                                standardized_df.at[idx, 'color'] = hex_to_color_name(standardized_df.at[idx, 'color'])
+                                        # Only process dict format mockup data
+                                        if isinstance(mockup_data, dict):
+                                            # Get the color value (could be in different formats)
+                                            color_val = row['color']
+                                            
+                                            # Try multiple formats for matching colors
+                                            matched = False
+                                            
+                                            # 1. Try direct match
+                                            if color_val in mockup_data:
+                                                standardized_df.at[idx, 'image_url'] = mockup_data[color_val]
+                                                matched = True
+                                                
+                                            # 2. Try with # prefix
+                                            if not matched and not color_val.startswith('#'):
+                                                hex_color = f"#{color_val}"
+                                                if hex_color in mockup_data:
+                                                    standardized_df.at[idx, 'image_url'] = mockup_data[hex_color]
+                                                    matched = True
+                                            
+                                            # 3. Try without # prefix
+                                            if not matched and color_val.startswith('#'):
+                                                plain_color = color_val.replace('#', '')
+                                                if plain_color in mockup_data:
+                                                    standardized_df.at[idx, 'image_url'] = mockup_data[plain_color]
+                                                    matched = True
+                                            
+                                            # 4. Try case-insensitive match
+                                            if not matched:
+                                                for key, url in mockup_data.items():
+                                                    if key.lower() == color_val.lower() or key.lower() == f"#{color_val.lower()}" or key.lower().replace('#', '') == color_val.lower().replace('#', ''):
+                                                        standardized_df.at[idx, 'image_url'] = url
+                                                        matched = True
+                                                        break
+                                            
+                                            # 5. Try matching color names
+                                            if not matched:
+                                                color_name = row['color'].lower()
+                                                for hex_code, url in mockup_data.items():
+                                                    mockup_color_name = hex_to_color_name(hex_code).lower()
+                                                    if mockup_color_name == color_name:
+                                                        standardized_df.at[idx, 'image_url'] = url
+                                                        matched = True
+                                                        break
                                 except Exception as e:
-                                    print(f"Error processing mockup URL for color: {e}")
-                    
+                                    print(f"Error matching mockup URL for color {row['color']}: {e}")
+
                     # 5. For generated products, find and set the parent_sku from regular products if possible
                     if 'parent_id' in export_df.columns:
                         for idx, row in standardized_df[mask_generated].iterrows():

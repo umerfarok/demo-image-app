@@ -190,6 +190,9 @@ else:
                             new_row['colour'] = color_name
                             new_row['color'] = color_name
                             
+                            # Store original hex code for matching purposes
+                            new_row['original_hex'] = color_code.replace("#", "") if color_code.startswith("#") else color_code
+                            
                             result_rows.append(new_row)
                         
                         return result_rows
@@ -268,6 +271,55 @@ else:
                 title_parts = [part for part in [product_name, size, color] if part]
                 marketplace_title = ' - '.join(title_parts)
                 export_df.at[idx, 'market_place_title'] = marketplace_title
+
+        # Fix for the filtered data export to properly match color-specific mockups
+        if 'export_csv_data' not in st.session_state and not export_df.empty:
+            # For generated products with colors, ensure the image_url matches the color
+            if 'product_type' in export_df.columns and 'color' in export_df.columns and 'mockup_urls' in export_df.columns:
+                # Get all generated products with mockup_urls
+                mask_generated_with_mockups = (export_df['product_type'] == 'Generated') & (~export_df['mockup_urls'].isna()) & (export_df['mockup_urls'] != '')
+                
+                # Process each row to match color with the correct mockup URL
+                for idx, row in export_df[mask_generated_with_mockups].iterrows():
+                    try:
+                        # Get the color for this row
+                        color = row['color'] if not pd.isna(row['color']) else None
+                        if not color:
+                            continue
+                            
+                        # Parse the mockup_urls JSON
+                        if not pd.isna(row['mockup_urls']) and row['mockup_urls']:
+                            mockup_data = row['mockup_urls']
+                            if isinstance(mockup_data, str) and mockup_data.startswith('{'):
+                                mockup_json = json.loads(mockup_data)
+                                
+                                # Try to find matching color in the mockup_urls (different formats)
+                                # First try direct color name match if mockup_urls contains color names
+                                if color in mockup_json:
+                                    export_df.at[idx, 'image_url'] = mockup_json[color]
+                                    continue
+                                    
+                                # Try with # prefix
+                                hex_color = f"#{color}" if not color.startswith('#') else color
+                                if hex_color in mockup_json:
+                                    export_df.at[idx, 'image_url'] = mockup_json[hex_color]
+                                    continue
+                                
+                                # Try without # prefix
+                                plain_color = color.replace('#', '')
+                                if plain_color in mockup_json:
+                                    export_df.at[idx, 'image_url'] = mockup_json[plain_color]
+                                    continue
+                                    
+                                # If no direct match, look for a color name match
+                                # Convert each hex to color name and compare
+                                for hex_code, url in mockup_json.items():
+                                    mockup_color_name = hex_to_color_name(hex_code)
+                                    if mockup_color_name.lower() == color.lower():
+                                        export_df.at[idx, 'image_url'] = url
+                                        break
+                    except Exception as e:
+                        print(f"Error matching mockup URL for color {color}: {e}")
 
 # Export button
 if not export_df.empty:
