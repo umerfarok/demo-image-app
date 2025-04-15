@@ -270,52 +270,349 @@ else:
                 if 'quantity' in filtered_df.columns:
                     filtered_df['quantity'] = pd.to_numeric(filtered_df['quantity'], errors='coerce').fillna(0).astype(int)
                 
-                # Format size data - clean up JSON arrays
-                if 'size' in filtered_df.columns:
-                    def clean_size_format(size_val):
-                        if pd.isna(size_val) or size_val == '':
-                            return ''
-                        try:
-                            if isinstance(size_val, str):
-                                if size_val.startswith('[') or size_val.startswith('{'):
-                                    # Parse JSON
-                                    size_data = json.loads(size_val)
-                                    if isinstance(size_data, list):
-                                        # Handle list of dictionaries with 'name' field
-                                        if all(isinstance(item, dict) and 'name' in item for item in size_data):
-                                            return ','.join([item['name'] for item in size_data])
-                                        # Handle list of strings
-                                        return ','.join(str(s).strip('"\'') for s in size_data)
-                                    return str(size_data)
-                            return str(size_val)
-                        except:
-                            return str(size_val)
+                # Define function to extract mockup URLs from JSON and create color-specific entries
+                def process_mockups_by_color(row_data):
+                    """Extract mockup URLs from JSON and create individual entries for each color"""
+                    if 'mockup_urls' not in row_data or pd.isna(row_data['mockup_urls']) or not row_data['mockup_urls']:
+                        return [row_data]
                     
-                    filtered_df['size'] = filtered_df['size'].apply(clean_size_format)
-                
-                # Format color data - clean up JSON arrays
-                for color_field in ['color', 'colour']:
-                    if color_field in filtered_df.columns:
-                        def clean_color_format(color_val):
-                            if pd.isna(color_val) or color_val == '':
-                                return ''
-                            try:
-                                if isinstance(color_val, str):
-                                    if color_val.startswith('[') or color_val.startswith('{'):
-                                        # Parse JSON
-                                        color_data = json.loads(color_val)
-                                        if isinstance(color_data, list):
-                                            # Remove quotes and join with commas
-                                            return ','.join(str(c).strip('"\'') for c in color_data)
-                                        return str(color_data)
-                                return str(color_val)
-                            except:
-                                return str(color_val)
-                        
-                        filtered_df[color_field] = filtered_df[color_field].apply(clean_color_format)
+                    try:
+                        mockup_data = row_data['mockup_urls']
+                        if isinstance(mockup_data, str) and (mockup_data.startswith('[') or mockup_data.startswith('{')):
+                            mockup_json = json.loads(mockup_data)
+                            
+                            # Handle dictionary format: {"#color1": "url1", "#color2": "url2"}
+                            if isinstance(mockup_json, dict) and len(mockup_json) > 0:
+                                result_rows = []
+                                
+                                for color_code, mockup_url in mockup_json.items():
+                                    new_row = row_data.copy()
+                                    
+                                    # Set the image_url to this specific mockup URL
+                                    new_row['image_url'] = mockup_url
+                                    
+                                    # Extract color without # if it starts with it
+                                    color_name = color_code.replace("#", "") if color_code.startswith("#") else color_code
+                                    
+                                    # Set color value for this mockup
+                                    new_row['colour'] = color_name
+                                    new_row['color'] = color_name
+                                    
+                                    result_rows.append(new_row)
+                                
+                                return result_rows
+                                
+                            # Handle array format: ["url1", "url2"]
+                            elif isinstance(mockup_json, list) and len(mockup_json) > 0:
+                                # For array format, we'll just use the first URL
+                                # since we don't have color information
+                                row_data['image_url'] = mockup_json[0]
+                                return [row_data]
+                    except Exception as e:
+                        print(f"Error processing mockups: {e}")
+                    
+                    # Default: return the original row
+                    return [row_data]
 
-            # Store the filtered DataFrame in session state for export
-            st.session_state.export_csv_data = filtered_df.to_csv(index=False)
+                # Create a new DataFrame for the CSV export with properly formatted data
+                export_rows = []
+                
+                for idx, row in filtered_df.iterrows():
+                    product_row = row.copy()
+                    
+                    # For parent products, set size and color to blank
+                    if 'parent_child' in product_row and product_row['parent_child'] == 'Parent':
+                        product_row['size'] = ''
+                        product_row['colour'] = ''
+                        product_row['color'] = ''
+                        
+                        # For generated products with mockups, extract them even for parent records
+                        if product_row.get('product_type') == 'Generated' and 'mockup_urls' in product_row and product_row['mockup_urls']:
+                            color_rows = process_mockups_by_color(product_row.to_dict())
+                            export_rows.extend(color_rows)
+                        else:
+                            export_rows.append(product_row.to_dict())
+                    else:
+                        # For child products, create separate rows for each size/color combination
+                        sizes = []
+                        colors = []
+                        
+                        # Process size values
+                        if 'size' in product_row and not pd.isna(product_row['size']) and product_row['size']:
+                            try:
+                                if isinstance(product_row['size'], str) and (product_row['size'].startswith('[') or product_row['size'].startswith('{')):
+                                    size_data = json.loads(product_row['size'])
+                                    if isinstance(size_data, list):
+                                        if all(isinstance(item, dict) and 'name' in item for item in size_data):
+                                            sizes = [item['name'] for item in size_data]
+                                        else:
+                                            sizes = [str(s).strip('"\'') for s in size_data]
+                                    else:
+                                        sizes = [str(size_data)]
+                                else:
+                                    sizes = [str(product_row['size'])]
+                            except:
+                                sizes = [str(product_row['size'])]
+                        
+                        # Use either 'color' or 'colour' field, whichever is available
+                        color_field = 'colour' if 'colour' in product_row and not pd.isna(product_row['colour']) else 'color'
+                        
+                        # Process color values
+                        if color_field in product_row and not pd.isna(product_row[color_field]) and product_row[color_field]:
+                            try:
+                                if isinstance(product_row[color_field], str) and (product_row[color_field].startswith('[') or product_row[color_field].startswith('{')):
+                                    color_data = json.loads(product_row[color_field])
+                                    if isinstance(color_data, list):
+                                        colors = [str(c).strip('"\'') for c in color_data]
+                                    else:
+                                        colors = [str(color_data)]
+                                else:
+                                    colors = [str(product_row[color_field])]
+                            except:
+                                colors = [str(product_row[color_field])]
+                        
+                        # For generated products with mockups, handle them specially
+                        if product_row.get('product_type') == 'Generated' and 'mockup_urls' in product_row and product_row['mockup_urls']:
+                            # Process mockups by color instead of the normal flow
+                            base_rows = []
+                            
+                            # If we have sizes, create a base row for each size first
+                            if sizes:
+                                for size in sizes:
+                                    size_row = product_row.copy()
+                                    size_row['size'] = size
+                                    base_rows.append(size_row.to_dict())
+                            else:
+                                base_rows.append(product_row.to_dict())
+                                
+                            # Now process each base row for mockups
+                            for base_row in base_rows:
+                                color_rows = process_mockups_by_color(base_row)
+                                export_rows.extend(color_rows)
+                        else:
+                            # Normal processing for non-mockup products
+                            # If we have sizes and colors, create a row for each combination
+                            if sizes and colors:
+                                for size in sizes:
+                                    for color in colors:
+                                        new_row = product_row.copy().to_dict()
+                                        new_row['size'] = size
+                                        new_row['colour'] = color
+                                        new_row['color'] = color  # Ensure both color fields are set
+                                        export_rows.append(new_row)
+                            # If we only have sizes, create a row for each size
+                            elif sizes:
+                                for size in sizes:
+                                    new_row = product_row.copy().to_dict()
+                                    new_row['size'] = size
+                                    export_rows.append(new_row)
+                            # If we only have colors, create a row for each color
+                            elif colors:
+                                for color in colors:
+                                    new_row = product_row.copy().to_dict()
+                                    new_row['colour'] = color
+                                    new_row['color'] = color  # Ensure both color fields are set
+                                    export_rows.append(new_row)
+                            else:
+                                # No size or color, just add the row as is
+                                export_rows.append(product_row.to_dict())
+                
+                # Convert the rows back to a DataFrame
+                export_df = pd.DataFrame(export_rows)
+                
+                # Ensure all required fields exist, add them if missing
+                required_fields = [
+                    'product_name', 'item_sku', 'parent_child', 'parent_sku',
+                    'size', 'color', 'image_url', 'market_place_title', 'category'
+                ]
+                
+                # Map internal field names to expected CSV field names
+                field_mapping = {
+                    'product_name': 'product_name',
+                    'item_sku': 'item_sku',
+                    'design_sku': 'item_sku',  # Use design_sku as item_sku for generated products
+                    'parent_child': 'parent_child',
+                    'parent_sku': 'parent_sku',
+                    'size': 'size',
+                    'colour': 'color',  # Standardize on 'color'
+                    'color': 'color',
+                    'image_url': 'image_url',
+                    'original_design_url': 'image_url',  # Use original_design_url as image_url for generated
+                    'mockup_urls': 'image_url',  # Use mockup_urls as image_url if available
+                    'market_place_title': 'market_place_title',
+                    'category': 'category'
+                }
+                
+                # Create standardized DataFrame with required fields
+                standardized_df = pd.DataFrame()
+                
+                # Define function to extract first mockup URL from JSON
+                def extract_first_mockup(mockup_data):
+                    if pd.isna(mockup_data) or not mockup_data:
+                        return ''
+                    try:
+                        if isinstance(mockup_data, str) and (mockup_data.startswith('[') or mockup_data.startswith('{')):
+                            data = json.loads(mockup_data)
+                            if isinstance(data, dict) and len(data) > 0:
+                                return list(data.values())[0]
+                            elif isinstance(data, list) and len(data) > 0:
+                                return data[0]
+                        return mockup_data
+                    except:
+                        return ''
+                
+                # First handle mockup_urls separately for generated products to ensure they're prioritized
+                if 'mockup_urls' in export_df.columns and 'product_type' in export_df.columns:
+                    # Create image_url from mockup_urls for generated products
+                    mask_generated = export_df['product_type'] == 'Generated'
+                    if 'image_url' not in export_df.columns:
+                        export_df['image_url'] = ''
+                    
+                    # Apply the extraction function only to generated products with mockup_urls
+                    for idx, row in export_df[mask_generated].iterrows():
+                        if not pd.isna(row.get('mockup_urls')) and row.get('mockup_urls'):
+                            export_df.at[idx, 'image_url'] = extract_first_mockup(row['mockup_urls'])
+                
+                # Now handle the rest of the fields
+                for required_field in required_fields:
+                    if required_field in export_df.columns:
+                        standardized_df[required_field] = export_df[required_field]
+                    else:
+                        # Try to map from existing columns
+                        mapped = False
+                        for src_field, dest_field in field_mapping.items():
+                            if dest_field == required_field and src_field in export_df.columns:
+                                # For image_url, we've already handled mockup_urls earlier
+                                if src_field == 'mockup_urls' and dest_field == 'image_url':
+                                    continue
+                                
+                                standardized_df[required_field] = export_df[src_field]
+                                mapped = True
+                                break
+                        
+                        if not mapped:
+                            # Add empty column if no mapping found
+                            standardized_df[required_field] = ''
+                
+                # Set parent_child field based on product type
+                if 'product_type' in export_df.columns and 'parent_child' in standardized_df.columns:
+                    # For regular products: set as "Parent"
+                    mask_regular = export_df['product_type'] == 'Regular'
+                    if any(mask_regular):
+                        standardized_df.loc[mask_regular, 'parent_child'] = 'Parent'
+                    
+                    # For generated products: set as "Child" 
+                    mask_generated = export_df['product_type'] == 'Generated'
+                    if any(mask_generated):
+                        standardized_df.loc[mask_generated, 'parent_child'] = 'Child'
+                    mask_regular = export_df['product_type'] == 'Regular'
+                    if any(mask_regular):
+                       standardized_df.loc[mask_regular, 'parent_sku'] = ''
+
+                    # For Generated items, parent_sku should be the item_sku of the Regular item
+                    mask_generated = export_df['product_type'] == 'Generated'
+                    if any(mask_generated) and any(mask_regular):
+                        regular_skus = export_df.loc[mask_regular, 'item_sku'].values
+                        standardized_df.loc[mask_generated, 'parent_sku'] = regular_skus[0] if len(regular_skus) > 0 else ''
+                    
+                # Add any additional useful fields that might be present
+                additional_fields = ['price', 'quantity', 'description', 'product_type']
+                for field in additional_fields:
+                    if field in export_df.columns:
+                        standardized_df[field] = export_df[field]
+                
+                # Handle special requirements for generated products
+                if 'product_type' in standardized_df.columns:
+                    # 1. For generated products, use product_name as category
+                    mask_generated = standardized_df['product_type'] == 'Generated'
+                    if any(mask_generated):
+                        standardized_df.loc[mask_generated, 'category'] = standardized_df.loc[mask_generated, 'product_name']
+                    
+                    # 2. For parent records in generated products, make item_sku blank
+                    mask_parent_generated = (standardized_df['product_type'] == 'Generated') & \
+                                           (standardized_df['parent_child'] == 'Parent')
+                    if any(mask_parent_generated):
+                        standardized_df.loc[mask_parent_generated, 'item_sku'] = ''
+                    
+                    # 3. Set market_place_title for generated products if not present
+                    if 'marketplace_title' not in standardized_df.columns or standardized_df['market_place_title'].isna().any():
+                        # Create market_place_title column if it doesn't exist
+                        if 'marketplace_title' not in standardized_df.columns:
+                            standardized_df['market_place_title'] = ''
+                        
+                        # Format marketplace title for generated products
+                        for idx, row in standardized_df[mask_generated].iterrows():
+                            product_name = row['product_name'] if not pd.isna(row['product_name']) else ''
+                            size = row['size'] if not pd.isna(row['size']) and row['size'] else ''
+                            color = row['color'] if not pd.isna(row['color']) and row['color'] else ''
+                            
+                            # Build marketplace title with available information
+                            title_parts = [part for part in [product_name, size, color] if part]
+                            marketplace_title = ' - '.join(title_parts)
+                            standardized_df.at[idx, 'market_place_title'] = marketplace_title
+                    
+                    # Check if there's an actual marketplace_title field in the original data and use it
+                    if 'marketplace_title' in export_df.columns:
+                        for idx, row in standardized_df[mask_generated].iterrows():
+                            if idx in export_df.index and not pd.isna(export_df.at[idx, 'marketplace_title']) and export_df.at[idx, 'marketplace_title']:
+                                # Use the original marketplace_title from the database
+                                standardized_df.at[idx, 'market_place_title'] = export_df.at[idx, 'marketplace_title']
+                    
+                    # 4. For generated products, ensure each color has the correct mockup URL from the mockup_urls dictionary
+                    if 'image_url' in standardized_df.columns and 'color' in standardized_df.columns:
+                        for idx, row in standardized_df[mask_generated].iterrows():
+                            if pd.isna(row['color']) or not row['color']:
+                                continue
+                                
+                            # Get original row from export_df to access mockup_urls
+                            if idx in export_df.index and 'mockup_urls' in export_df.columns:
+                                mockup_urls = export_df.at[idx, 'mockup_urls']
+                                if pd.isna(mockup_urls) or not mockup_urls:
+                                    continue
+                                    
+                                try:
+                                    # Extract color value (ignoring # if present)
+                                    color_val = row['color']
+                                    color_key = f"#{color_val}" if not color_val.startswith('#') else color_val
+                                    alt_color_key = color_val.replace('#', '')
+                                    
+                                    # Parse mockup data to get color-specific URL
+                                    if isinstance(mockup_urls, str) and mockup_urls.startswith('{'):
+                                        mockup_data = json.loads(mockup_urls)
+                                        
+                                        # Try to match the color to get the specific URL
+                                        if color_key in mockup_data:
+                                            standardized_df.at[idx, 'image_url'] = mockup_data[color_key]
+                                        # Try alternative color key format (with or without #)
+                                        elif f"#{alt_color_key}" in mockup_data:
+                                            standardized_df.at[idx, 'image_url'] = mockup_data[f"#{alt_color_key}"]
+                                        elif alt_color_key in mockup_data:
+                                            standardized_df.at[idx, 'image_url'] = mockup_data[alt_color_key]
+                                except Exception as e:
+                                    print(f"Error processing mockup URL for color: {e}")
+                    
+                    # 5. For generated products, find and set the parent_sku from regular products if possible
+                    if 'parent_id' in export_df.columns:
+                        for idx, row in standardized_df[mask_generated].iterrows():
+                            parent_id = export_df.loc[idx, 'parent_id'] if idx in export_df.index and 'parent_id' in export_df.columns else None
+                            if parent_id and not pd.isna(parent_id):
+                                # Try to find parent sku in regular products
+                                parent_product = products_df[products_df['id'] == parent_id]
+                                if not parent_product.empty and 'item_sku' in parent_product.columns:
+                                    standardized_df.at[idx, 'parent_sku'] = parent_product.iloc[0]['item_sku']
+
+                # Store the prepared DataFrame in session state for export
+                # Ensure columns are in the required order
+                column_order = required_fields + [col for col in standardized_df.columns if col not in required_fields]
+                st.session_state.export_csv_data = standardized_df[column_order].to_csv(index=False)
+
+            else:
+                # Empty DataFrame with required columns
+                empty_df = pd.DataFrame(columns=[
+                    'product_name', 'item_sku', 'parent_child', 'parent_sku',
+                    'size', 'color', 'image_url', 'market_place_title', 'category'
+                ])
+                st.session_state.export_csv_data = empty_df.to_csv(index=False)
 
             st.success("CSV data prepared! Please proceed to the Export page to download the file.")
 
@@ -411,8 +708,8 @@ else:
                 if product_type == 'Generated' and 'mockup_urls' in row and row['mockup_urls']:
                     image_field = 'mockup_urls'
                 else:
-                    # Use original_design_url as fallback for generated products with no mockups
-                    image_field = 'mockup_urls' if product_type == 'Regular' else 'original_design_url'
+                    # Use image_url for regular products, original_design_url as fallback for generated products
+                    image_field = 'image_url' if product_type == 'Regular' else 'original_design_url'
                 
                 if image_field in row and row[image_field]:
                     image_url = row[image_field]
@@ -421,26 +718,31 @@ else:
                             import json
                             if isinstance(image_url, str) and (image_url.startswith('[') or image_url.startswith('{')):
                                 mockup_data = json.loads(image_url)
-                                thumbnail_url = None
                                 
                                 if isinstance(mockup_data, dict) and len(mockup_data) > 0:
-                                    # Just show the first color as thumbnail in the list
-                                    first_key = list(mockup_data.keys())[0]
-                                    thumbnail_url = mockup_data[first_key]
-                                    # Show a count of additional mockups if there are multiple
-                                    mockup_count = len(mockup_data)
-                                    if mockup_count > 1:
-                                        st.caption(f"+{mockup_count-1} more")
+                                    # Get list of available colors
+                                    colors = list(mockup_data.keys())
+                                    
+                                    # Use the row index to select which color to show
+                                    # This ensures different rows show different colors
+                                    color_idx = idx % len(colors)
+                                    selected_color = colors[color_idx]
+                                    
+                                    # Get URL for selected color
+                                    url = mockup_data[selected_color]
+                                    
+                                    # Extract color name without # if it exists
+                                    color_name = selected_color.replace("#", "") if selected_color.startswith("#") else selected_color
+                                    
+                                    # Display just one image with color info
+                                    st.image(url, width=70, caption=f"{color_name}")
+                                    
                                 elif isinstance(mockup_data, list) and len(mockup_data) > 0:
-                                    thumbnail_url = mockup_data[0]
-                                    # Show a count of additional mockups if there are multiple
-                                    if len(mockup_data) > 1:
-                                        st.caption(f"+{len(mockup_data)-1} more")
-                                
-                                if thumbnail_url:
-                                    st.image(thumbnail_url, width=70)
-                                else:
-                                    st.markdown("📷 *No mockup available*")
+                                    # For list type mockups, select one based on index
+                                    list_idx = idx % len(mockup_data)
+                                    st.image(mockup_data[list_idx], width=70)
+                            else:
+                                st.image(image_url, width=70)
                         except Exception as e:
                             st.error(f"Error parsing mockup URL: {e}")
                             st.markdown("📷 *Invalid mockup data*")

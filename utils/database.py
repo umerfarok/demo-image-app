@@ -279,8 +279,8 @@ class Database:
             
             query = """
             INSERT INTO generated_products (
-                product_name, design_sku, marketplace_title, size, color,
-                original_design_url, mockup_urls, is_published, parent_product_id
+                product_name, parent_sku, marketplace_title, size, color,
+                original_design_url, mockup_urls, is_published, parent_product_id,item_sku,
             ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             """
             
@@ -289,12 +289,13 @@ class Database:
             
             values = (
                 product_data['product_name'],
-                product_data['design_sku'],
+                product_data['parent_sku'],
                 product_data.get('marketplace_title', ''),
                 product_data.get('size', '[]'),
                 product_data.get('color', '[]'),
                 product_data.get('original_design_url', ''),
                 product_data.get('mockup_urls', '{}'),
+                product_data.get['item_sku'],
                 is_published,
                 product_data.get('parent_product_id', None)
             )

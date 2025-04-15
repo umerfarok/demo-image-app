@@ -40,8 +40,10 @@ CREATE TABLE IF NOT EXISTS products (
 CREATE TABLE IF NOT EXISTS generated_products (
     id INT AUTO_INCREMENT PRIMARY KEY,
     product_name VARCHAR(255) NOT NULL,
-    design_sku VARCHAR(100) NOT NULL UNIQUE,
+    parent_sku VARCHAR(100) NOT NULL,
+    item_sku VARCHAR(100) NOT NULL UNIQUE,
     marketplace_title TEXT NULL,
+    parent_child TEXT DEFAULT 'Child'
     size TEXT NULL,                -- Stores JSON array of available sizes
     color TEXT NULL,               -- Stores JSON array of available colors as hex values
     original_design_url TEXT NULL, -- URL to the original design image in S3

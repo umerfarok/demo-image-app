@@ -2,6 +2,8 @@ import streamlit as st
 import os
 import requests
 import json
+import random
+import string
 from dotenv import load_dotenv
 from utils.auth import check_password
 from utils.database import get_database_connection
@@ -11,10 +13,67 @@ from utils.s3_storage import upload_image_file_to_s3, check_s3_connection
 if not check_password():
     st.stop()
 
-
 # Load environment variables from . 
 load_dotenv()
 
+# Function to generate product SKU based on name, colors, sizes, and marketplace title
+def generate_product_sku(design_name, colors=None, sizes=None, marketplace_title=None):
+    """Generate a unique SKU based on design name, colors, sizes, and marketplace title"""
+    if not design_name:
+        return ""
+        
+    # Remove spaces and convert to uppercase
+    clean_name = design_name.replace(" ", "").upper()
+    
+    # Take the first 3 characters of the design name, or fewer if the name is shorter
+    name_part = clean_name[:min(3, len(clean_name))]
+    
+    # Add marketplace title influence if available (first 2 chars)
+    if marketplace_title:
+        clean_title = marketplace_title.replace(" ", "").upper()
+        title_part = clean_title[:min(2, len(clean_title))]
+        name_part = name_part + title_part[:1]  # Add just one character from title to keep SKU compact
+    
+    # Add a dash after the name part
+    sku = name_part + "-"
+    
+    # Add color codes (first letter of each color)
+    if colors and len(colors) > 0:
+        color_part = ""
+        for color in colors:
+            color_part += color[0].upper()  # First letter of each color
+        if color_part:
+            sku += color_part + "-"
+    
+    # Add size information (count of sizes)
+    if sizes and len(sizes) > 0:
+        sku += f"{len(sizes)}-"
+    
+    # Add a random alphanumeric string to ensure uniqueness
+    sku += ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(4))
+    
+    return sku
+
+# Function to update the SKU based on current inputs
+def update_design_sku():
+    """Update the design SKU based on current form inputs"""
+    if 'design_name' in st.session_state and st.session_state.design_name:
+        colors = st.session_state.selected_colors if 'selected_colors' in st.session_state else []
+        sizes = st.session_state.selected_sizes if 'selected_sizes' in st.session_state else []
+        marketplace_title = st.session_state.marketplace_title if 'marketplace_title' in st.session_state else ""
+        
+        # Generate the new SKU
+        new_sku = generate_product_sku(
+            st.session_state.design_name, 
+            colors, 
+            sizes, 
+            marketplace_title
+        )
+        
+        # Update the session state
+        st.session_state.design_sku = new_sku
+        return new_sku
+    return ""
 
 db = get_database_connection()
 
@@ -38,7 +97,7 @@ if 'selected_product_data' not in st.session_state:
 
 # Define the available options for sizes and colors
 AVAILABLE_SIZES = ["Small", "Medium", "Large", "XL", "2XL"]
-AVAILABLE_COLORS = ["Black", "Navy", "Grey", "White", "Red"]
+AVAILABLE_COLORS = ["Black", "Navy", "Grey", "White", "Red", "Blue", "Green", "Yellow", "Purple"]
 
 def generate_mockup(image_url, colors, mockup_id=None, smart_object_uuid=None):
     """
@@ -134,15 +193,15 @@ def color_name_to_hex(color_name):
     Convert common color names to their hex values
     """
     color_map = {
-        "Black": "#000000",
-        "White": "#FFFFFF",
-        "Navy": "#000080",
-        "Grey": "#808080",
-        "Red": "#FF0000",
-        "Blue": "#0000FF",
-        "Green": "#008000",
-        "Yellow": "#FFFF00",
-        "Purple": "#800080"
+    "Black": "#000000",
+    "White": "#FFFFFF",
+    "Navy": "#000080",
+    "Grey": "#808080",
+    "Red": "#FF0000",
+    "Blue": "#0000FF",
+    "Green": "#008000",
+    "Yellow": "#FFFF00",
+    "Purple": "#800080"
     }
     return color_map.get(color_name, "#FF0000")  # Default to red if color not found
 
@@ -174,7 +233,7 @@ def load_product_data():
         
         # Fetch the product data from database
         product_data = db.get_product(selected_id)
-        if product_data:
+        if (product_data):
             st.session_state.selected_product_data = product_data
             
             # Try to parse JSON string data for sizes and colors
@@ -302,7 +361,7 @@ def generate_product_page():
         # Input fields - pre-populated with selected product data if available
         default_design_name = ""
         default_marketplace_title = ""
-        default_design_sku = "324234"  # Fixed value as in original
+        default_design_sku = ""  # Will be auto-generated
         default_sizes = []
         default_colors = []
         
@@ -311,7 +370,7 @@ def generate_product_page():
             product = st.session_state.selected_product_data
             default_design_name = product['product_name']
             default_marketplace_title = product['marketplace_title'] or ""
-            default_design_sku = product['item_sku'] or default_design_sku
+            default_design_sku = product['item_sku'] or ""
             
             # Handle sizes - extract from parsed JSON if available and ensure they match available options
             if hasattr(st.session_state, 'parsed_sizes'):
@@ -335,15 +394,37 @@ def generate_product_page():
                             )
         
         # Input fields with defaults from selected product
-        design_name = st.text_input("Design Name", value=default_design_name, placeholder="Value", key="design_name")
-        marketplace_title = st.text_input("Marketplace Title (80 character limit)", value=default_marketplace_title, placeholder="Value", key="marketplace_title")
-        design_sku = st.text_input("Design SKU", value=default_design_sku, disabled=True, key="design_sku")
+        design_name = st.text_input("Design Name", value=default_design_name, placeholder="Value", key="design_name", 
+                                   on_change=update_design_sku)
+        
+        marketplace_title = st.text_input("Marketplace Title (80 character limit)", 
+                                        value=default_marketplace_title, 
+                                        placeholder="Value", 
+                                        key="marketplace_title",
+                                        on_change=update_design_sku)
+        
+        # Generate initial SKU if needed
+        if not default_design_sku and default_design_name:
+            default_design_sku = generate_product_sku(
+                default_design_name, 
+                default_colors, 
+                default_sizes, 
+                default_marketplace_title
+            )
+            st.session_state.design_sku = default_design_sku
+        elif not 'design_sku' in st.session_state or not st.session_state.design_sku:
+            st.session_state.design_sku = default_design_sku
+        
+        # Display the generated or loaded SKU
+        design_sku = st.text_input("Design SKU", value=st.session_state.design_sku, disabled=True, key="design_sku_display")
 
         # Multi-select for sizes and colors - using our defined constants
-        sizes = st.multiselect("Select Sizes", AVAILABLE_SIZES, default=default_sizes, key="selected_sizes")
+        sizes = st.multiselect("Select Sizes", AVAILABLE_SIZES, default=default_sizes, key="selected_sizes", 
+                             on_change=update_design_sku)
         
         # Colors multiselect with defaults
-        colors = st.multiselect("Select Colours", AVAILABLE_COLORS, default=default_colors, key="selected_colors")
+        colors = st.multiselect("Select Colours", AVAILABLE_COLORS, default=default_colors, key="selected_colors", 
+                              on_change=update_design_sku)
 
         # Display color hex values for reference
         if colors:
@@ -447,11 +528,14 @@ def generate_product_page():
                     if len(generated_colors) > 2:
                         st.session_state.preview3_selected_color = generated_colors[2]
                     
+                    # Make sure we have the latest SKU
+                    current_sku = update_design_sku()
+                    
                     # Store the selected product details to save later
                     st.session_state.product_data_to_save = {
                         "design_name": design_name,
                         "marketplace_title": marketplace_title,
-                        "design_sku": design_sku,
+                        "design_sku": current_sku,
                         "sizes": sizes,
                         "colors": colors,
                         "original_design_url": image_url
@@ -467,8 +551,11 @@ def generate_product_page():
         if st.session_state.mockup_results and hasattr(st.session_state, 'product_data_to_save'):
             if st.button("Save Product to Database", key="save_product_button"):
                 with st.spinner("Saving mockups to S3 and product to database..."):
-                    # Remove the SKU check that's causing the error
+                    # Make sure we have the latest SKU before saving
                     design_sku = st.session_state.product_data_to_save["design_sku"]
+                    if not design_sku:
+                        design_sku = update_design_sku()
+                        st.session_state.product_data_to_save["design_sku"] = design_sku
                     
                     # Step 1: Save mockups to S3 more efficiently
                     mockup_s3_urls = {}
@@ -573,7 +660,7 @@ def generate_product_page():
                             product_dict = {
                                 "product_name": product_data["design_name"],
                                 "marketplace_title": product_data["marketplace_title"],
-                                "design_sku": product_data["design_sku"],
+                                "item_sku": product_data["design_sku"],  # Use item_sku instead of design_sku for DB field
                                 "size": json.dumps(product_data["sizes"]),
                                 "color": json.dumps([color_name_to_hex(color) for color in product_data["colors"]]),
                                 "original_design_url": product_data["original_design_url"],
@@ -599,6 +686,12 @@ def generate_product_page():
                     else:
                         st.error("No mockups were successfully saved to S3. Cannot save product.")
 
+    # Initialize the mockup color tracking
+    if 'original_mockup_colors' not in st.session_state:
+        st.session_state.original_mockup_colors = {}
+    if 'panel_color_mapping' not in st.session_state:
+        st.session_state.panel_color_mapping = {}
+
     with right_col:
         # Preview by color
         st.write("### Preview by Colour")
@@ -607,76 +700,109 @@ def generate_product_page():
         if st.session_state.mockup_results:
             # Get all generated mockups
             available_mockup_colors = list(st.session_state.mockup_results.keys())
-            available_mockup_names = []
             
-            # Map hex colors to color names for better display
+            # Convert hex colors to color names for better display
+            mockup_color_names = []
             for hex_color in available_mockup_colors:
                 color_name = hex_to_color_name(hex_color.lstrip('#'))
-                available_mockup_names.append(color_name or "Unknown")
+                mockup_color_names.append(color_name or "Unknown")
             
-            st.success(f"Showing all {len(available_mockup_colors)} generated mockups")
-            
-            # Determine the number of columns for display
-            # Calculate columns based on number of mockups (2 columns for 2 mockups, 3 columns for 3-4, 4 for more)
+            # Store the original mockup colors if not already tracked
+            if not st.session_state.original_mockup_colors:
+                for idx, hex_color in enumerate(available_mockup_colors):
+                    st.session_state.original_mockup_colors[idx] = hex_color
+                    # Map panel index to the original hex color
+                    st.session_state.panel_color_mapping[idx] = hex_color
+                        
+            # Check if we need to generate a new mockup based on color selection
+            if st.session_state.generate_for_panel is not None and st.session_state.generate_color is not None:
+                panel_idx = st.session_state.generate_for_panel
+                color_name = st.session_state.generate_color
+                hex_selected = color_name_to_hex(color_name)
+                
+                with st.spinner(f"Generating mockup for {color_name}..."):
+                    # Only generate if we don't already have this color
+                    if hex_selected not in st.session_state.mockup_results:
+                        if generate_on_demand_mockup(color_name):
+                            # Update the panel color mapping
+                            st.session_state.panel_color_mapping[panel_idx] = hex_selected
+                    
+                    # Clear the flag after generation (whether successful or not)
+                    st.session_state.generate_for_panel = None
+                    st.session_state.generate_color = None
+                    st.experimental_rerun()
+                    
+            # Determine the number of columns based on number of mockups
             if len(available_mockup_colors) <= 2:
-                num_cols = len(available_mockup_colors)
+                num_cols = 2
             elif len(available_mockup_colors) <= 4:
                 num_cols = 3
             else:
                 num_cols = 4
                 
-            # Ensure we have at least 1 column
-            num_cols = max(1, num_cols)
-            
-            # Create columns for mockup display
-            mockup_cols = st.columns(num_cols)
-            
-            # Loop through all mockups and display them in the columns
-            for i, (hex_color, color_name) in enumerate(zip(available_mockup_colors, available_mockup_names)):
-                col_idx = i % num_cols
-                with mockup_cols[col_idx]:
-                    # Get the current color name selected in the dropdown
-                    current_color = color_name
-                    
-                    # Create a dropdown to select colors
-                    selected_color = st.selectbox(
-                        f"Color {i+1}", 
-                        colors if colors else AVAILABLE_COLORS,
-                        index=colors.index(color_name) if color_name in colors else 0,
-                        key=f"preview{i}_color",
-                        disabled=False  # Enable color changing
-                    )
-                    
-                    # Check if color has changed and regenerate mockup if needed
-                    if selected_color != current_color:
-                        # Generate a new mockup for this color if it's different
-                        hex_selected = color_name_to_hex(selected_color)
-                        if hex_selected not in st.session_state.mockup_results:
-                            if st.session_state.uploaded_image_url:
-                                generate_on_demand_mockup(selected_color)
-                                # Refresh the page to show the new mockup
-                                st.experimental_rerun()
-                    
-                    # Display the mockup image for the selected color
-                    display_hex = color_name_to_hex(selected_color)
-                    if display_hex in st.session_state.mockup_results:
-                        st.image(
-                            st.session_state.mockup_results[display_hex],
-                            caption=f"{selected_color} ({display_hex})",
-                            use_column_width=True
-                        )
-                    else:
-                        st.image(
-                            st.session_state.mockup_results[hex_color],
-                            caption=f"{color_name} ({hex_color})",
-                            use_column_width=True
-                        )
-                    
-                    # Add a small gap after each image for better visual separation
-                    st.write("")
+            # Create enough rows to hold all mockups
+            for i in range(0, len(st.session_state.original_mockup_colors), num_cols):
+                # Create columns for this row of mockups
+                row_cols = st.columns(num_cols)
+                
+                # Fill the row with mockups based on original panel structure
+                for col_idx in range(num_cols):
+                    mockup_idx = i + col_idx
+                    if mockup_idx in st.session_state.original_mockup_colors:
+                        # Get current color for this panel from mapping
+                        current_hex_color = st.session_state.panel_color_mapping.get(mockup_idx)
+                        original_hex_color = st.session_state.original_mockup_colors.get(mockup_idx)
+                        
+                        # Get color name for display
+                        if current_hex_color and current_hex_color in st.session_state.mockup_results:
+                            color_name = hex_to_color_name(current_hex_color.lstrip('#')) or "Unknown"
+                        else:
+                            color_name = hex_to_color_name(original_hex_color.lstrip('#')) or "Unknown"
+                        
+                        with row_cols[col_idx]:
+                            # Create unique key for this preview panel
+                            preview_key = f"preview_{mockup_idx}_color"
+                            
+                            # Initialize default selected color in mockup_panel_colors
+                            if mockup_idx not in st.session_state.mockup_panel_colors:
+                                st.session_state.mockup_panel_colors[mockup_idx] = color_name if color_name in AVAILABLE_COLORS else AVAILABLE_COLORS[0]
+                            
+                            # Find index of current color or default to first color
+                            default_index = 0
+                            if st.session_state.mockup_panel_colors[mockup_idx] in AVAILABLE_COLORS:
+                                default_index = AVAILABLE_COLORS.index(st.session_state.mockup_panel_colors[mockup_idx])
+                            
+                            # Color selection dropdown with on_change callback
+                            selected_color = st.selectbox(
+                                f"Mockup {mockup_idx + 1}", 
+                                AVAILABLE_COLORS,
+                                index=default_index,
+                                key=preview_key,
+                                on_change=on_mockup_color_change,
+                                args=(mockup_idx,)
+                            )
+                            
+                            # Get hex value for selected color
+                            hex_selected = color_name_to_hex(selected_color)
+                            
+                            # Display the mockup for the selected color if available
+                            if hex_selected in st.session_state.mockup_results:
+                                st.image(
+                                    st.session_state.mockup_results[hex_selected],
+                                    caption=f"{selected_color} ({hex_selected})",
+                                    use_column_width=True
+                                )
+                            else:
+                                # If we don't have this color yet, show generate button
+                                st.write(f"No mockup available for {selected_color}")
+                                if st.button("Generate This Color", key=f"gen_mockup_{mockup_idx}"):
+                                    # Set flags for generation on next render cycle
+                                    st.session_state.generate_for_panel = mockup_idx
+                                    st.session_state.generate_color = selected_color
+                                    st.experimental_rerun()
         else:
+            # Case when no mockups have been generated yet
             st.info("Generate mockups to see previews here")
-            
             # Create 3 columns for color selection dropdowns
             col1, col2, col3 = st.columns(3)
             
@@ -695,7 +821,8 @@ def generate_product_page():
                     st.image(design_image, width=150, caption=f"{color1} (Preview Only)")
                     if st.session_state.uploaded_image_url:
                         if st.button("Generate Mockup", key="gen_mockup1"):
-                            generate_on_demand_mockup(color1)
+                            if generate_on_demand_mockup(color1):
+                                st.experimental_rerun()
                 else:
                     st.image("https://via.placeholder.com/150", width=150, caption=color1)
             
@@ -711,7 +838,8 @@ def generate_product_page():
                     st.image(design_image, width=150, caption=f"{color2} (Preview Only)")
                     if st.session_state.uploaded_image_url:
                         if st.button("Generate Mockup", key="gen_mockup2"):
-                            generate_on_demand_mockup(color2)
+                            if generate_on_demand_mockup(color2):
+                                st.experimental_rerun()
                 else:
                     st.image("https://via.placeholder.com/150", width=150, caption=color2)
             
@@ -727,7 +855,8 @@ def generate_product_page():
                     st.image(design_image, width=150, caption=f"{color3} (Preview Only)")
                     if st.session_state.uploaded_image_url:
                         if st.button("Generate Mockup", key="gen_mockup3"):
-                            generate_on_demand_mockup(color3)
+                            if generate_on_demand_mockup(color3):
+                                st.experimental_rerun()
                 else:
                     st.image("https://via.placeholder.com/150", width=150, caption=color3)
 
@@ -793,6 +922,37 @@ def on_color_change(key_prefix):
     if color_key in st.session_state:
         selected_color = st.session_state[color_key]
         generate_on_demand_mockup(selected_color)
+
+# Initialize specific session state variables for tracking mockup panel selections
+if 'mockup_panel_colors' not in st.session_state:
+    st.session_state.mockup_panel_colors = {}
+if 'generate_for_panel' not in st.session_state:
+    st.session_state.generate_for_panel = None
+if 'generate_color' not in st.session_state:
+    st.session_state.generate_color = None
+
+# Add a function to handle color selection changes
+def on_mockup_color_change(mockup_idx):
+    """Handle color change in the mockup preview panel"""
+    if mockup_idx not in st.session_state.panel_color_mapping:
+        return
+        
+    preview_key = f"preview_{mockup_idx}_color"
+    selected_color = st.session_state[preview_key]
+    hex_selected = color_name_to_hex(selected_color)
+    
+    # Store the selected color in our tracking dictionary
+    st.session_state.mockup_panel_colors[mockup_idx] = selected_color
+    
+    # If we don't have this color yet, generate it
+    if hex_selected not in st.session_state.mockup_results:
+        # Set only once to avoid double triggering
+        if st.session_state.generate_for_panel is None:
+            st.session_state.generate_for_panel = mockup_idx
+            st.session_state.generate_color = selected_color
+    else:
+        # If we already have this color, update the panel mapping directly
+        st.session_state.panel_color_mapping[mockup_idx] = hex_selected
 
 # Call the function to render the page
 generate_product_page()
