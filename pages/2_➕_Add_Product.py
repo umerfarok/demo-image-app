@@ -29,6 +29,8 @@ if 'reset_form' in st.session_state and st.session_state.reset_form:
         st.session_state.mockup_id = ""
     if 'preview_mockup_selection' in st.session_state:
         st.session_state.preview_mockup_selection = ""
+    if 'sku' in st.session_state:
+        st.session_state.sku = ""
 
 # Initialize session state for sizes, colors, and mockup_id if not already done
 if 'sizes' not in st.session_state:
@@ -47,6 +49,8 @@ if 'available_sizes' not in st.session_state:
     st.session_state.available_sizes = ["Small", "Medium", "Large", "XL", "XXL", "XXXL"]
 if 'selected_sizes' not in st.session_state:
     st.session_state.selected_sizes = []
+if 'sku' not in st.session_state:
+    st.session_state.sku = ""  # Initialize SKU as empty string
 
 # Color to hex mapping
 COLOR_HEX_MAP = {
@@ -60,6 +64,49 @@ COLOR_HEX_MAP = {
     "Yellow": "#FFFF00",
     "Purple": "#800080"
 }
+
+# Function to generate product SKU based on name, colors, and sizes
+def generate_product_sku(item_name, colors=None, sizes=None):
+    """Generate a SKU based on item name, colors, and sizes"""
+    if not item_name:
+        return ""
+        
+    # Remove spaces and convert to uppercase
+    clean_name = item_name.replace(" ", "").upper()
+    
+    # Take the first 3 characters of the name, or fewer if the name is shorter
+    name_part = clean_name[:min(3, len(clean_name))]
+    
+    # Add a dash after the name part
+    sku = name_part + "-"
+    
+    # Add color codes (first letter of each color)
+    if colors and len(colors) > 0:
+        color_part = ""
+        for color_hex in colors:
+            # Get the color name from the hex value
+            color_name = next((k for k, v in COLOR_HEX_MAP.items() if v == color_hex), "")
+            if color_name:
+                color_part += color_name[0]  # First letter of the color
+        if color_part:
+            sku += color_part + "-"
+    
+    # Add size information (count of sizes)
+    if sizes and len(sizes) > 0:
+        sku += f"{len(sizes)}-"
+    
+    # Add a random alphanumeric string to ensure uniqueness
+    sku += ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(4))
+    
+    return sku
+
+# Function to update SKU based on current item name, colors, and sizes
+def update_sku():
+    st.session_state.sku = generate_product_sku(
+        st.session_state.item_name, 
+        st.session_state.colors, 
+        st.session_state.sizes
+    )
 
 # Function to generate random SKU
 def generate_random_sku(prefix="", length=8):
@@ -78,6 +125,8 @@ def add_sizes():
             'name': size,
             'sku': size_sku
         })
+    # Update main product SKU after sizes change
+    update_sku()
 
 # Function to add multiple colors
 def add_colors():
@@ -85,6 +134,8 @@ def add_colors():
     for color in st.session_state.selected_colors:
         # Only store the hex value, not the color name
         st.session_state.colors.append(COLOR_HEX_MAP.get(color, "#FFFFFF"))
+    # Update main product SKU after colors change
+    update_sku()
 
 # Function to update item name and mockup ID when selection changes
 def update_mockup_selection():
@@ -93,11 +144,20 @@ def update_mockup_selection():
         st.session_state.mockup_id = mockup_id_map.get(selected_mockup, "")
         # Set item name to match the selected smart object
         st.session_state.item_name = selected_mockup.split(",")[0] if "," in selected_mockup else selected_mockup
+        # Update SKU when mockup selection changes
+        update_sku()
     else:
         st.session_state.mockup_id = ""
         st.session_state.item_name = ""
     print(f"Updated mockup_id: {st.session_state.mockup_id}")  # Debug
     print(f"Updated item_name: {st.session_state.item_name}")  # Debug
+
+# Function to update item name and SKU
+def update_item_name():
+    if "form_item_name" in st.session_state:
+        st.session_state.item_name = st.session_state.form_item_name
+        # Update SKU when item name changes
+        update_sku()
 
 # Fetch mockups from API
 mockups = get_mockups()
@@ -167,7 +227,7 @@ with st.form(key="add_blank_item_form", clear_on_submit=False):
     if "form_item_name" in st.session_state:
         st.session_state.item_name = st.session_state.form_item_name
     
-    st.text_input("SKU", placeholder="Enter SKU", key="sku")
+    st.text_input("SKU", placeholder="Auto-generated SKU", key="sku", value=st.session_state.sku, disabled=True)
 
     # Size Section
     st.subheader("Size")
@@ -179,7 +239,7 @@ with st.form(key="add_blank_item_form", clear_on_submit=False):
         key="selected_sizes"
     )
     
-    st.form_submit_button("Add Sizes", on_click=add_sizes)
+    size_button = st.form_submit_button("Add Sizes", on_click=add_sizes)
 
     # Display added sizes
     if st.session_state.sizes:
@@ -212,7 +272,7 @@ with st.form(key="add_blank_item_form", clear_on_submit=False):
                     <p>{color}<br>{hex_color}</p>
                 """, unsafe_allow_html=True)
     
-    st.form_submit_button("Add Colors", on_click=add_colors)
+    color_button = st.form_submit_button("Add Colors", on_click=add_colors)
 
     # Display added colors
     if st.session_state.colors:
@@ -230,6 +290,12 @@ with st.form(key="add_blank_item_form", clear_on_submit=False):
     # Submit button
     submit_button = st.form_submit_button(label="Save")
 
+# After form submission, handle the update of item name
+if "form_item_name" in st.session_state and st.session_state.form_item_name != st.session_state.item_name:
+    st.session_state.item_name = st.session_state.form_item_name
+    # Update SKU when item name changes outside the form context
+    update_sku()
+
 # Update mockup selection when form is submitted or when page loads
 if st.session_state.mockup_selection and st.session_state.mockup_selection != "":
     # Check if mockup_id needs updating based on current selection
@@ -240,15 +306,20 @@ if st.session_state.mockup_selection and st.session_state.mockup_selection != ""
         st.session_state.item_name = (st.session_state.mockup_selection.split(",")[0] 
                                      if "," in st.session_state.mockup_selection 
                                      else st.session_state.mockup_selection)
+        # Update SKU when mockup/item selection changes
+        update_sku()
 
 # Process form submission
 if submit_button:
     # Use the mockup selection from the outside form component
-    # We're not accessing form_mockup_selection anymore since mockup selection is done outside the form
     st.session_state.item_name = st.session_state.form_item_name if "form_item_name" in st.session_state else st.session_state.item_name
     
-    # Get the current value of sku from the session state without modifying it
+    # Get the current value of sku from the session state 
     item_sku = st.session_state.sku
+    
+    # If SKU is empty, generate it now
+    if not item_sku:
+        item_sku = generate_product_sku(st.session_state.item_name, st.session_state.colors, st.session_state.sizes)
     
     # Get smart object UUID from the selected mockup
     smart_object_uuid = None
