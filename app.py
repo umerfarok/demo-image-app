@@ -4,6 +4,7 @@ import os
 from utils.styles import load_css
 
 # Set page configuration
+
 st.set_page_config(
     page_title="Product Generator",
     page_icon="🛒",
