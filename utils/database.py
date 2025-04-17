@@ -47,6 +47,34 @@ class Database:
         """
         self.cursor.execute(create_products_table)
         
+        # Create generated_products table if it doesn't exist
+        create_generated_products_table = """
+        CREATE TABLE IF NOT EXISTS generated_products (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            product_name VARCHAR(255) NOT NULL,
+            item_sku VARCHAR(100) NULL,
+            marketplace_title TEXT NULL,
+            size TEXT NULL,
+            color TEXT NULL,
+            original_design_url TEXT NULL,
+            mockup_urls TEXT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            is_published BOOLEAN DEFAULT FALSE,
+            parent_product_id INT NULL,
+            parent_sku VARCHAR(100) NULL,
+            parent_child VARCHAR(10) DEFAULT 'Child',
+
+
+            INDEX idx_design_sku (design_sku),
+            INDEX idx_item_sku (item_sku),
+            INDEX idx_created_at (created_at),
+            INDEX idx_is_published (is_published),
+            INDEX idx_parent_product_id (parent_product_id)
+        )
+        """
+        self.cursor.execute(create_generated_products_table)
+        
         # Check if columns exist and add them if they don't
         try:
             # Check if mockup_id column exists
@@ -59,9 +87,20 @@ class Database:
             if not self.cursor.fetchone():
                 self.cursor.execute("ALTER TABLE products ADD COLUMN smart_object_uuid VARCHAR(255) NULL")
             
+            # Check if item_sku column exists in generated_products
+            self.cursor.execute("SHOW COLUMNS FROM generated_products LIKE 'item_sku'")
+            if not self.cursor.fetchone():
+                self.cursor.execute("ALTER TABLE generated_products ADD COLUMN item_sku VARCHAR(100) NULL")
+                self.cursor.execute("ALTER TABLE generated_products ADD INDEX idx_item_sku (item_sku)")
+            
+            # Check if parent_sku column exists in generated_products
+            self.cursor.execute("SHOW COLUMNS FROM generated_products LIKE 'parent_sku'")
+            if not self.cursor.fetchone():
+                self.cursor.execute("ALTER TABLE generated_products ADD COLUMN parent_sku VARCHAR(100) NULL")
+                
             self.connection.commit()
         except Error as e:
-            st.error(f"Error modifying products table: {e}")
+            st.error(f"Error modifying tables: {e}")
         
         self.connection.commit()
         
@@ -417,29 +456,9 @@ class Database:
     def _ensure_generated_products_table(self):
         """Create the generated_products table if it doesn't exist"""
         try:
-            create_table_query = """
-            CREATE TABLE IF NOT EXISTS generated_products (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                product_name VARCHAR(255) NOT NULL,
-                design_sku VARCHAR(100) NOT NULL UNIQUE,
-                marketplace_title TEXT NULL,
-                size TEXT NULL,
-                color TEXT NULL,
-                original_design_url TEXT NULL,
-                mockup_urls TEXT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-                is_published BOOLEAN DEFAULT FALSE,
-                parent_product_id INT NULL,
-                
-                INDEX idx_design_sku (design_sku),
-                INDEX idx_created_at (created_at),
-                INDEX idx_is_published (is_published),
-                INDEX idx_parent_product_id (parent_product_id)
-            )
-            """
-            self.cursor.execute(create_table_query)
-            self.connection.commit()
+            # This is now handled in _create_tables() during initialization
+            # Keep this method for backward compatibility with existing code
+            pass
         except Error as e:
             st.warning(f"Table creation notice: {e}")
 
