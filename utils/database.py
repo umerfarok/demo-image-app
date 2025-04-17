@@ -3,28 +3,126 @@ from mysql.connector import Error
 import streamlit as st
 import pandas as pd
 from config import DB_CONFIG
+import os
+import sys
 
 class Database:
     def __init__(self):
         """Initialize database connection"""
+        self.connection = None
+        self.cursor = None
+        
+        # Try connecting with SSL first
+        if not self._connect_with_ssl():
+            # If SSL fails, try connecting without SSL verification
+            if not self._connect_without_ssl_verify():
+                # If that fails too, try connecting without SSL
+                self._connect_without_ssl()
+    
+    def _connect_with_ssl(self):
+        """Try to connect with SSL"""
         try:
+            # SSL configuration with verification
+            ssl_config = {}
+            if DB_CONFIG.get('ssl_mode') == 'REQUIRED' and os.path.exists(DB_CONFIG.get('ssl_ca', '')):
+                ssl_config = {
+                    'ssl_ca': DB_CONFIG['ssl_ca'],
+                    'ssl_verify_cert': DB_CONFIG.get('ssl_verify', True),
+                }
+                st.info(f"Attempting connection with SSL certificate: {DB_CONFIG['ssl_ca']}")
+            
+            # Connect to database with SSL
             self.connection = mysql.connector.connect(
                 host=DB_CONFIG['host'],
+                port=DB_CONFIG.get('port', 3306),
                 database=DB_CONFIG['database'],
                 user=DB_CONFIG['user'],
-                password=DB_CONFIG['password']
+                password=DB_CONFIG['password'],
+                **ssl_config
             )
+            
             if self.connection.is_connected():
                 self.cursor = self.connection.cursor(dictionary=True)
+                server_info = self.connection.get_server_info()
+                st.success(f"Connected to MySQL server version {server_info} with SSL")
                 
                 # Create tables if they don't exist
                 self._create_tables()
+                return True
+            return False
         except Error as e:
-            st.error(f"Database connection error: {e}")
-            self.connection = None
+            st.warning(f"SSL connection attempt failed: {e}")
+            return False
     
+    def _connect_without_ssl_verify(self):
+        """Try to connect with SSL but without verification"""
+        try:
+            # SSL configuration without verification
+            ssl_config = {
+                'ssl_ca': DB_CONFIG.get('ssl_ca', ''),
+                'ssl_verify_cert': False,
+            }
+            st.info("Attempting connection with SSL but without certificate verification")
+            
+            # Connect to database with SSL but without verification
+            self.connection = mysql.connector.connect(
+                host=DB_CONFIG['host'],
+                port=DB_CONFIG.get('port', 3306),
+                database=DB_CONFIG['database'],
+                user=DB_CONFIG['user'],
+                password=DB_CONFIG['password'],
+                **ssl_config
+            )
+            
+            if self.connection.is_connected():
+                self.cursor = self.connection.cursor(dictionary=True)
+                server_info = self.connection.get_server_info()
+                st.success(f"Connected to MySQL server version {server_info} with SSL (no verification)")
+                
+                # Create tables if they don't exist
+                self._create_tables()
+                return True
+            return False
+        except Error as e:
+            st.warning(f"SSL without verification connection attempt failed: {e}")
+            return False
+    
+    def _connect_without_ssl(self):
+        """Try to connect without SSL as last resort"""
+        try:
+            st.info("Attempting connection without SSL as last resort")
+            
+            # Connect to database without SSL
+            self.connection = mysql.connector.connect(
+                host=DB_CONFIG['host'],
+                port=DB_CONFIG.get('port', 3306),
+                database=DB_CONFIG['database'],
+                user=DB_CONFIG['user'],
+                password=DB_CONFIG['password'],
+                use_pure=True  # Use pure Python implementation
+            )
+            
+            if self.connection.is_connected():
+                self.cursor = self.connection.cursor(dictionary=True)
+                server_info = self.connection.get_server_info()
+                st.success(f"Connected to MySQL server version {server_info} without SSL")
+                
+                # Create tables if they don't exist
+                self._create_tables()
+                return True
+            
+            st.error("All connection attempts failed. Please check your database configuration.")
+            return False
+        except Error as e:
+            st.error(f"Connection without SSL failed: {e}")
+            return False
+
     def _create_tables(self):
         """Create necessary tables if they don't exist"""
+        if not self.cursor:
+            st.error("No database cursor available. Tables not created.")
+            return
+            
         create_products_table = """
         CREATE TABLE IF NOT EXISTS products (
             id INT AUTO_INCREMENT PRIMARY KEY,
@@ -181,6 +279,10 @@ class Database:
             DataFrame: Products as pandas DataFrame or None if error
         """
         try:
+            if not self.cursor:
+                st.error("No database cursor available. Cannot get products.")
+                return pd.DataFrame()
+                
             query = "SELECT * FROM products ORDER BY created_at DESC"
             self.cursor.execute(query)
             result = self.cursor.fetchall()
@@ -565,10 +667,14 @@ class Database:
     
     def __del__(self):
         """Close database connection when object is destroyed"""
-        if hasattr(self, 'connection') and self.connection is not None and self.connection.is_connected():
-            if hasattr(self, 'cursor'):
-                self.cursor.close()
-            self.connection.close()
+        if hasattr(self, 'connection') and self.connection is not None:
+            try:
+                if hasattr(self, 'cursor') and self.cursor is not None:
+                    self.cursor.close()
+                if self.connection.is_connected():
+                    self.connection.close()
+            except:
+                pass
 
 # Create connection pool
 @st.cache_resource
