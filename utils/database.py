@@ -5,12 +5,15 @@ import pandas as pd
 from config import DB_CONFIG
 import os
 import sys
+import time
 
 class Database:
     def __init__(self):
         """Initialize database connection"""
         self.connection = None
         self.cursor = None
+        self.max_reconnect_attempts = 3
+        self.reconnect_delay = 2  # seconds
         
         # Try connecting with SSL first
         if not self._connect_with_ssl():
@@ -116,6 +119,62 @@ class Database:
         except Error as e:
             st.error(f"Connection without SSL failed: {e}")
             return False
+
+    def _check_connection(self):
+        """Check if connection is alive and reconnect if necessary"""
+        try:
+            if self.connection is None or not self.connection.is_connected():
+                st.warning("Database connection lost. Attempting to reconnect...")
+                return self.reconnect()
+            return True
+        except Error as e:
+            st.warning(f"Connection check failed: {e}")
+            return self.reconnect()
+    
+    def reconnect(self):
+        """Attempt to reconnect to the database"""
+        attempts = 0
+        
+        while attempts < self.max_reconnect_attempts:
+            try:
+                attempts += 1
+                st.info(f"Reconnection attempt {attempts}/{self.max_reconnect_attempts}...")
+                
+                # Close existing connections if they exist
+                if hasattr(self, 'cursor') and self.cursor is not None:
+                    try:
+                        self.cursor.close()
+                    except:
+                        pass
+                    
+                if hasattr(self, 'connection') and self.connection is not None:
+                    try:
+                        self.connection.close()
+                    except:
+                        pass
+                
+                # Reset connection attributes
+                self.connection = None
+                self.cursor = None
+                
+                # Try reconnecting with the same strategy as in __init__
+                if self._connect_with_ssl():
+                    return True
+                if self._connect_without_ssl_verify():
+                    return True
+                if self._connect_without_ssl():
+                    return True
+                
+                # If we reach here, reconnection failed
+                st.warning(f"Reconnection attempt {attempts} failed. Retrying in {self.reconnect_delay} seconds...")
+                time.sleep(self.reconnect_delay)
+                
+            except Exception as e:
+                st.warning(f"Reconnection error: {e}. Retrying in {self.reconnect_delay} seconds...")
+                time.sleep(self.reconnect_delay)
+                
+        st.error("Failed to reconnect to database after multiple attempts.")
+        return False
 
     def _create_tables(self):
         """Create necessary tables if they don't exist"""
@@ -239,6 +298,10 @@ class Database:
         Returns:
             int: Product ID if inserted successfully, None otherwise
         """
+        if not self._check_connection():
+            st.error("Cannot add product: database connection failed")
+            return None
+            
         try:
             query = """
             INSERT INTO products (
@@ -278,6 +341,10 @@ class Database:
         Returns:
             DataFrame: Products as pandas DataFrame or None if error
         """
+        if not self._check_connection():
+            st.error("Cannot get products: database connection failed")
+            return pd.DataFrame()
+            
         try:
             if not self.cursor:
                 st.error("No database cursor available. Cannot get products.")
@@ -322,6 +389,10 @@ class Database:
         Returns:
             dict: Product data or None if not found
         """
+        if not self._check_connection():
+            st.error(f"Cannot get product {product_id}: database connection failed")
+            return None
+            
         try:
             query = "SELECT * FROM products WHERE id = %s"
             self.cursor.execute(query, (product_id,))
@@ -341,6 +412,10 @@ class Database:
         Returns:
             bool: True if update successful, False otherwise
         """
+        if not self._check_connection():
+            st.error(f"Cannot update product {product_id}: database connection failed")
+            return False
+            
         try:
             query = """
             UPDATE products SET
@@ -399,6 +474,10 @@ class Database:
         Returns:
             int: Product ID if inserted successfully, None otherwise
         """
+        if not self._check_connection():
+            st.error("Cannot add generated product: database connection failed")
+            return None
+            
         try:
             # Check if the table exists, create it if not
             self._ensure_generated_products_table()
@@ -480,6 +559,10 @@ class Database:
         Returns:
             bool: True if update successful, False otherwise
         """
+        if not self._check_connection():
+            st.error(f"Cannot update generated product {product_id}: database connection failed")
+            return False
+            
         try:
             query = """
             UPDATE generated_products SET
@@ -526,6 +609,10 @@ class Database:
         Returns:
             DataFrame: Generated products as pandas DataFrame or None if error
         """
+        if not self._check_connection():
+            st.error("Cannot get generated products: database connection failed")
+            return pd.DataFrame()
+            
         try:
             # Ensure the table exists
             self._ensure_generated_products_table()
@@ -548,6 +635,10 @@ class Database:
         Returns:
             dict: Product data or None if not found
         """
+        if not self._check_connection():
+            st.error(f"Cannot get generated product {product_id}: database connection failed")
+            return None
+            
         try:
             query = "SELECT * FROM generated_products WHERE id = %s"
             self.cursor.execute(query, (product_id,))
@@ -575,6 +666,10 @@ class Database:
         Returns:
             bool: True if deletion successful, False otherwise
         """
+        if not self._check_connection():
+            st.error(f"Cannot delete product {product_id}: database connection failed")
+            return False
+            
         try:
             query = "DELETE FROM products WHERE id = %s"
             self.cursor.execute(query, (product_id,))
@@ -594,6 +689,10 @@ class Database:
         Returns:
             bool: True if deletion successful, False otherwise
         """
+        if not self._check_connection():
+            st.error(f"Cannot delete generated product {product_id}: database connection failed")
+            return False
+            
         try:
             query = "DELETE FROM generated_products WHERE id = %s"
             self.cursor.execute(query, (product_id,))
@@ -610,6 +709,14 @@ class Database:
         Returns:
             dict: Dictionary containing stats
         """
+        if not self._check_connection():
+            st.error("Cannot get stats: database connection failed")
+            return {
+                'total_products': 0,
+                'parent_count': 0,
+                'image_count': 0
+            }
+            
         try:
             # Total products
             self.cursor.execute("SELECT COUNT(*) as total FROM products")
@@ -646,6 +753,10 @@ class Database:
         Returns:
             bool: True if the SKU exists, False otherwise
         """
+        if not self._check_connection():
+            st.error(f"Cannot check SKU {sku}: database connection failed")
+            return False
+            
         try:
             # Use the existing cursor
             cursor = self.cursor if hasattr(self, 'cursor') else self.connection.cursor()
