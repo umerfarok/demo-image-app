@@ -18,6 +18,7 @@ API_URL = 'https://api.dynamicmockups.com/v1'
 
 # Storage configuration - S3 is now primary method
 IMAGES_DIR = 'images'  # Used only if S3 setup fails
+USE_S3_STORAGE = False
 
 # AWS S3 configuration
 S3_CONFIG = {

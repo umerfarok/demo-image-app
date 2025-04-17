@@ -46,16 +46,16 @@ def require_auth():
     st.components.v1.html(js_code, height=0)
     
     # Check if we're in the middle of an auth reload
-    query_params = st.experimental_get_query_params()
+    query_params = st.query_params
     if 'auth_reload' in query_params and 'user_email' in query_params:
         # Verify the email matches our expected user
-        if query_params['user_email'][0] == USER_EMAIL:
+        if query_params['user_email'] == USER_EMAIL:
             # Set session state based on localStorage (trust localStorage on reload)
             st.session_state['authenticated'] = True
-            st.session_state['email'] = query_params['user_email'][0]
+            st.session_state['email'] = query_params['user_email']
             
             # Clear the auth_reload parameter
-            st.experimental_set_query_params()
+            st.query_params.clear()
             
             # Ensure sidebar is shown now that we're authenticated
             show_sidebar()
@@ -72,12 +72,12 @@ def check_password():
         return True
 
     # Check if there's authentication info in query parameters from localStorage
-    query_params = st.experimental_get_query_params()
+    query_params = st.query_params
     if 'auth_reload' in query_params and 'user_email' in query_params:
-        if query_params['user_email'][0] == USER_EMAIL:
+        if query_params['user_email'] == USER_EMAIL:
             st.session_state['authenticated'] = True
-            st.session_state['email'] = query_params['user_email'][0]
-            st.experimental_set_query_params()
+            st.session_state['email'] = query_params['user_email']
+            st.query_params.clear()
             show_sidebar()
             return True
 
@@ -121,7 +121,7 @@ def check_password():
     # If the form was just submitted and the credentials were correct, reload the page
     if authentication_status:
         show_sidebar()
-        st.experimental_rerun()
+        st.rerun()
 
     return False
 

@@ -381,8 +381,8 @@ if submit_button:
                 st.session_state.colors = []
                 
                 # Redirect to refresh the page (which will reset all widgets)
-                # Using st.experimental_rerun() for compatibility with older Streamlit versions
-                st.experimental_rerun()
+                # Usingst.rerun() for compatibility with older Streamlit versions
+                st.rerun()
             else:
                 st.error("Failed to add product. Database returned no product ID.")
         except Exception as e:

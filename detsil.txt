@@ -236,7 +236,7 @@ def login_page():
             if auth.login(email, password):
                 st.session_state['authenticated'] = True
                 st.success("Login successful!")
-                st.experimental_rerun()
+               st.rerun()
             else:
                 st.error("Invalid email or password")
 
@@ -244,7 +244,7 @@ def logout():
     if 'authenticated' in st.session_state:
         del st.session_state['authenticated']
     st.success("Logged out successfully!")
-    st.experimental_rerun()
+   st.rerun()
 4. DynamicMockups API Integration (utils/api_handler.py)
 Python
 import requests
@@ -725,13 +725,13 @@ else:
                 if st.button("Edit Product"):
                     st.session_state['edit_product_id'] = selected_product_id
                     st.session_state['edit_product_data'] = product
-                    st.experimental_rerun()
+                   st.rerun()
                     
             with col2:
                 if st.button("Delete Product"):
                     if db.delete_product(selected_product_id):
                         st.success("Product deleted successfully")
-                        st.experimental_rerun()
+                       st.rerun()
                     else:
                         st.error("Failed to delete product")
     
@@ -790,7 +790,7 @@ else:
                         # Clear the edit state
                         del st.session_state['edit_product_id']
                         del st.session_state['edit_product_data']
-                        st.experimental_rerun()
+                       st.rerun()
                     else:
                         st.error("Failed to update product")
             
@@ -798,7 +798,7 @@ else:
                 # Clear the edit state
                 del st.session_state['edit_product_id']
                 del st.session_state['edit_product_data']
-                st.experimental_rerun()
+               st.rerun()
 Export Page (pages/4_📤_Export.py)
 Python
 import streamlit as st

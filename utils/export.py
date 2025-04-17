@@ -1,5 +1,4 @@
 import pandas as pd
-from config import USE_S3_STORAGE
 from utils.api import is_s3_url
 
 def format_products_for_export(df):
@@ -15,7 +14,7 @@ def format_products_for_export(df):
     # Create a copy to avoid modifying the original
     export_df = df.copy()
     
-    # Remove database-specific columns
+    # Remove database-specific columns`
     if 'id' in export_df.columns:
         export_df = export_df.drop(columns=['id'])
     

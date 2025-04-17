@@ -65,9 +65,8 @@ class Database:
             parent_sku VARCHAR(100) NULL,
             parent_child VARCHAR(10) DEFAULT 'Child',
 
-
-            INDEX idx_design_sku (design_sku),
             INDEX idx_item_sku (item_sku),
+            INDEX idx_parent_sku (parent_sku),
             INDEX idx_created_at (created_at),
             INDEX idx_is_published (is_published),
             INDEX idx_parent_product_id (parent_product_id)
@@ -383,7 +382,8 @@ class Database:
             query = """
             UPDATE generated_products SET
                 product_name = %s,
-                design_sku = %s,
+                item_sku = %s,
+                parent_sku = %s,
                 marketplace_title = %s,
                 size = %s,
                 color = %s,
@@ -399,7 +399,8 @@ class Database:
             
             values = (
                 product_data['product_name'],
-                product_data['design_sku'],
+                product_data.get('item_sku', ''),
+                product_data.get('parent_sku', ''),
                 product_data.get('marketplace_title', ''),
                 product_data.get('size', '[]'),
                 product_data.get('color', '[]'),
@@ -533,35 +534,33 @@ class Database:
                 'image_count': 0
             }
     
-    def check_if_sku_exists(self, design_sku):
+    def check_if_sku_exists(self, sku):
         """
-        Check if a design SKU already exists in the database
+        Check if a SKU already exists in the database
         
         Args:
-            design_sku (str): The design SKU to check
+            sku (str): The SKU to check
             
         Returns:
             bool: True if the SKU exists, False otherwise
         """
         try:
-            # Create a cursor
-            cursor = self.conn.cursor()
+            # Use the existing cursor
+            cursor = self.cursor if hasattr(self, 'cursor') else self.connection.cursor()
             
             # Execute query to check if SKU exists in generated_products table
             cursor.execute(
-                "SELECT COUNT(*) FROM generated_products WHERE design_sku = %s", 
-                (design_sku,)
+                "SELECT COUNT(*) as count FROM generated_products WHERE item_sku = %s OR parent_sku = %s", 
+                (sku, sku)
             )
             
             # Get the result
-            count = cursor.fetchone()[0]
-            
-            # Close cursor
-            cursor.close()
+            result = cursor.fetchone()
+            count = result['count'] if isinstance(result, dict) else result[0]
             
             return count > 0
         except Exception as e:
-            print(f"Error checking if SKU exists: {e}")
+            st.error(f"Error checking if SKU exists: {e}")
             return False
     
     def __del__(self):

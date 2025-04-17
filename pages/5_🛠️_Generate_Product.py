@@ -738,7 +738,7 @@ def generate_product_page():
                     # Clear the flag after generation (whether successful or not)
                     st.session_state.generate_for_panel = None
                     st.session_state.generate_color = None
-                    st.experimental_rerun()
+                    st.rerun()
                     
             # Determine the number of columns based on number of mockups
             if len(available_mockup_colors) <= 2:
@@ -798,7 +798,7 @@ def generate_product_page():
                                 st.image(
                                     st.session_state.mockup_results[hex_selected],
                                     caption=f"{selected_color} ({hex_selected})",
-                                    use_column_width=True
+                                    use_container_width=True
                                 )
                             else:
                                 # If we don't have this color yet, show generate button
@@ -807,7 +807,7 @@ def generate_product_page():
                                     # Set flags for generation on next render cycle
                                     st.session_state.generate_for_panel = mockup_idx
                                     st.session_state.generate_color = selected_color
-                                    st.experimental_rerun()
+                                    st.rerun()
         else:
             # Case when no mockups have been generated yet
             st.info("Generate mockups to see previews here")
@@ -830,7 +830,7 @@ def generate_product_page():
                     if st.session_state.uploaded_image_url:
                         if st.button("Generate Mockup", key="gen_mockup1"):
                             if generate_on_demand_mockup(color1):
-                                st.experimental_rerun()
+                               st.rerun()
                 else:
                     st.image("https://via.placeholder.com/150", width=150, caption=color1)
             
@@ -847,7 +847,7 @@ def generate_product_page():
                     if st.session_state.uploaded_image_url:
                         if st.button("Generate Mockup", key="gen_mockup2"):
                             if generate_on_demand_mockup(color2):
-                                st.experimental_rerun()
+                               st.rerun()
                 else:
                     st.image("https://via.placeholder.com/150", width=150, caption=color2)
             
@@ -864,7 +864,7 @@ def generate_product_page():
                     if st.session_state.uploaded_image_url:
                         if st.button("Generate Mockup", key="gen_mockup3"):
                             if generate_on_demand_mockup(color3):
-                                st.experimental_rerun()
+                               st.rerun()
                 else:
                     st.image("https://via.placeholder.com/150", width=150, caption=color3)
 

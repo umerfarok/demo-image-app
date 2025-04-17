@@ -35,7 +35,7 @@ with st.sidebar:
     
     if st.button("Logout"):
         if logout():
-            st.experimental_rerun()
+            st.rerun()
 
 # Main content area (only shown if authenticated)
 st.title("Product Generator Dashboard")
@@ -68,8 +68,8 @@ with col1:
     </div>
     """, unsafe_allow_html=True)
     if st.button("Go to Add Product", key="add_btn"):
-        st.experimental_set_query_params(page="add_product")
-        st.experimental_rerun()
+        st.query_params["page"] = "add_product"
+        st.rerun()
 
 with col2:
     st.markdown("""
@@ -79,8 +79,8 @@ with col2:
     </div>
     """, unsafe_allow_html=True)
     if st.button("Go to Product List", key="list_btn"):
-        st.experimental_set_query_params(page="product_list")
-        st.experimental_rerun()
+        st.query_params["page"] = "product_list"
+        st.rerun()
 
 with col3:
     st.markdown("""
@@ -90,8 +90,8 @@ with col3:
     </div>
     """, unsafe_allow_html=True)
     if st.button("Go to Export", key="export_btn"):
-        st.experimental_set_query_params(page="export")
-        st.experimental_rerun()
+        st.query_params["page"] = "export"
+        st.rerun()
 
 with col4:
     st.markdown("""
@@ -101,8 +101,8 @@ with col4:
     </div>
     """, unsafe_allow_html=True)
     if st.button("Go to Product Generator", key="generate_btn"): 
-        st.experimental_set_query_params(page="product_generator")
-        st.experimental_rerun()
+        st.query_params["page"] = "product_generator"
+        st.rerun()
 
 # Create necessary directories if they don't exist
 if not os.path.exists('images'):

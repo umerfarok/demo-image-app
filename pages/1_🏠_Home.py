@@ -114,19 +114,19 @@ with col1:
     if st.button("Add New Product", use_container_width=True):
         st.experimental_set_query_params(page="add_product")
         time.sleep(0.1)  # Short delay to allow query param to take effect
-        st.experimental_rerun()
+        st.rerun()
 
 with col2:
     if st.button("View All Products", use_container_width=True):
         st.experimental_set_query_params(page="product_list")
         time.sleep(0.1)
-        st.experimental_rerun()
+        st.rerun()
 
 with col3:
     if st.button("Export Products", use_container_width=True):
         st.experimental_set_query_params(page="export")
         time.sleep(0.1)
-        st.experimental_rerun()
+        st.rerun()
 
 # App information
 st.markdown("""

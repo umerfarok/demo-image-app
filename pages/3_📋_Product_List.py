@@ -87,14 +87,14 @@ if st.session_state.confirm_delete:
                 st.session_state.product_to_delete = None
                 st.success("Product deleted successfully!")
                 # Refresh the page to reflect changes
-                st.experimental_rerun()
+                st.rerun()
             else:
                 st.error("Failed to delete product")
     with col2:
         if st.button("Cancel"):
             st.session_state.confirm_delete = False
             st.session_state.product_to_delete = None
-            st.experimental_rerun()
+            st.rerun()
 
 # Handle view single product
 elif st.session_state.view_product_id is not None:
@@ -110,7 +110,7 @@ elif st.session_state.view_product_id is not None:
     if st.button("← Back to Product List"):
         st.session_state.view_product_id = None
         st.session_state.view_product_type = None
-        st.experimental_rerun()
+        st.rerun()
     
     # Display product details with improved layout
     st.subheader(f"Product Details: {product['product_name']} ({product_type} Product)")
@@ -808,14 +808,14 @@ else:
                     if st.button("View", key=f"view_{product_type}_{product_id}"):
                         st.session_state.view_product_id = product_id
                         st.session_state.view_product_type = product_type
-                        st.experimental_rerun()
+                        st.rerun()
                 
                 with delete_col:
                     if st.button("Delete", key=f"delete_{product_type}_{product_id}"):
                         st.session_state.confirm_delete = True
                         st.session_state.product_to_delete = product_id
                         st.session_state.product_type = product_type
-                        st.experimental_rerun()
+                        st.rerun()
             
             # Add separator line between rows
             st.markdown("<hr style='margin: 5px 0;'>", unsafe_allow_html=True)
@@ -830,7 +830,7 @@ else:
             prev_disabled = (st.session_state.current_page <= 1)
             if st.button("← Previous", disabled=prev_disabled, key="prev_button"):
                 st.session_state.current_page -= 1
-                st.experimental_rerun()
+                st.rerun()
                 
         with col2:
             # Show page numbers
@@ -868,13 +868,13 @@ else:
                         else:
                             if st.button(f"{page_num}", key=f"page_{page_num}"):
                                 st.session_state.current_page = page_num
-                                st.experimental_rerun()
+                                st.rerun()
         
         with col3:
             next_disabled = (st.session_state.current_page >= total_pages)
             if st.button("Next →", disabled=next_disabled, key="next_button"):
                 st.session_state.current_page += 1
-                st.experimental_rerun()
+                st.rerun()
         
         # Display page information
         st.write(f"Page {st.session_state.current_page} of {total_pages} | Showing {start_idx+1}-{end_idx} of {total_items} products")
