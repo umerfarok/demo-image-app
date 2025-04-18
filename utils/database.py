@@ -1,11 +1,50 @@
 import mysql.connector
 from mysql.connector import Error
+from mysql.connector import pooling
 import streamlit as st
 import pandas as pd
 from config import DB_CONFIG
 import os
 import sys
 import time
+
+# Global connection pool - will be initialized once and reused
+connection_pool = None
+
+def init_connection_pool():
+    """Initialize a connection pool that can be shared across sessions"""
+    global connection_pool
+    if connection_pool is not None:
+        return connection_pool
+        
+    try:
+        # Configure pool with connection parameters
+        pool_config = {
+            'pool_name': 'demo_image_app_pool',
+            'pool_size': 5,  # Adjust based on your needs and server limits
+            'pool_reset_session': True,
+            'host': DB_CONFIG['host'],
+            'port': DB_CONFIG.get('port', 3306),
+            'database': DB_CONFIG['database'],
+            'user': DB_CONFIG['user'],
+            'password': DB_CONFIG['password'],
+            'use_pure': True,
+        }
+        
+        # Add SSL configuration if needed
+        if DB_CONFIG.get('ssl_mode') == 'REQUIRED' and os.path.exists(DB_CONFIG.get('ssl_ca', '')):
+            pool_config.update({
+                'ssl_ca': DB_CONFIG['ssl_ca'],
+                'ssl_verify_cert': DB_CONFIG.get('ssl_verify', True),
+            })
+            
+        # Create the pool
+        connection_pool = mysql.connector.pooling.MySQLConnectionPool(**pool_config)
+        st.success(f"Connection pool initialized with size: {pool_config['pool_size']}")
+        return connection_pool
+    except Error as e:
+        st.error(f"Error creating connection pool: {e}")
+        return None
 
 class Database:
     def __init__(self):
@@ -15,13 +54,41 @@ class Database:
         self.max_reconnect_attempts = 3
         self.reconnect_delay = 2  # seconds
         
-        # Try connecting with SSL first
-        if not self._connect_with_ssl():
-            # If SSL fails, try connecting without SSL verification
-            if not self._connect_without_ssl_verify():
-                # If that fails too, try connecting without SSL
-                self._connect_without_ssl()
-    
+        # Get a connection from the pool instead of creating a new one
+        self._get_connection_from_pool()
+        
+    def _get_connection_from_pool(self):
+        """Get a connection from the connection pool"""
+        global connection_pool
+        
+        try:
+            # Initialize the pool if it doesn't exist
+            if connection_pool is None:
+                connection_pool = init_connection_pool()
+            
+            if connection_pool is None:
+                # If pool initialization failed, fall back to direct connection methods
+                if not self._connect_with_ssl():
+                    if not self._connect_without_ssl_verify():
+                        self._connect_without_ssl()
+                return
+                
+            # Get a connection from the pool
+            self.connection = connection_pool.get_connection()
+            if self.connection.is_connected():
+                self.cursor = self.connection.cursor(dictionary=True)
+                server_info = self.connection.get_server_info()
+                st.success(f"Connected to MySQL server version {server_info} (pooled connection)")
+                
+                # Create tables if they don't exist
+                self._create_tables()
+        except Error as e:
+            st.warning(f"Pool connection failed: {e}. Trying direct connection methods...")
+            # Fall back to direct connection methods
+            if not self._connect_with_ssl():
+                if not self._connect_without_ssl_verify():
+                    self._connect_without_ssl()
+
     def _connect_with_ssl(self):
         """Try to connect with SSL"""
         try:
@@ -796,4 +863,8 @@ def get_database_connection():
     Returns:
         Database: Database connection instance
     """
+    # Initialize the connection pool first if it doesn't exist
+    if connection_pool is None:
+        init_connection_pool()
+        
     return Database()
