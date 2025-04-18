@@ -1,0 +1,10 @@
+credentials:
+  usernames:
+    admin:
+      email: admin@example.com
+      name: admin
+      password: password123  # Replace with hashed password in production
+cookie:
+  expiry_days: 30
+  key: abcdef123456  # Must be a string
+  name: product_generator
