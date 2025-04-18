@@ -18,7 +18,7 @@ with open('config.yaml') as file:
     config = yaml.load(file, Loader=SafeLoader)
 
 # Initialize authenticator
-authenticator = stauth.Authenticate(
+authenticator = stauth.Authenticate( 
     config['credentials'],
     config['cookie']['name'],
     config['cookie']['key'],
@@ -257,27 +257,58 @@ elif st.session_state.get("authentication_status") is True:
             if (product_data):
                 st.session_state.selected_product_data = product_data
                 
-                # Try to parse JSON string data for sizes and colors
+                # Try to parse JSON string data for sizes, colors, and multiple mockups
                 try:
+                    # Parse sizes
                     if product_data['size'] and product_data['size'].startswith('['):
                         st.session_state.parsed_sizes = json.loads(product_data['size'])
                     else:
                         st.session_state.parsed_sizes = []
                         
+                    # Parse colors
                     if product_data['color'] and product_data['color'].startswith('['):
                         st.session_state.parsed_colors = json.loads(product_data['color'])
                     else:
                         st.session_state.parsed_colors = []
-                except json.JSONDecodeError:
-                    st.error("Failed to parse product size or color data")
+                    
+                    # Load multiple mockups if available
+                    if 'mockup_ids' in product_data and product_data['mockup_ids'] and product_data['mockup_ids'].startswith('['):
+                        st.session_state.mockup_ids = json.loads(product_data['mockup_ids'])
+                        print(f"Loaded multiple mockup IDs: {st.session_state.mockup_ids}")
+                    else:
+                        # Fallback to single mockup_id
+                        st.session_state.mockup_ids = [product_data['mockup_id']] if product_data['mockup_id'] else []
+                        print(f"Using single mockup ID: {st.session_state.mockup_ids}")
+                    
+                    # Load multiple smart object UUIDs if available
+                    if 'smart_object_uuids' in product_data and product_data['smart_object_uuids'] and product_data['smart_object_uuids'].startswith('['):
+                        st.session_state.smart_object_uuids = json.loads(product_data['smart_object_uuids'])
+                        print(f"Loaded multiple smart object UUIDs: {st.session_state.smart_object_uuids}")
+                    else:
+                        # Fallback to single smart_object_uuid
+                        st.session_state.smart_object_uuids = [product_data['smart_object_uuid']] if product_data['smart_object_uuid'] else []
+                        print(f"Using single smart object UUID: {st.session_state.smart_object_uuids}")
+                    
+                except json.JSONDecodeError as e:
+                    st.error(f"Failed to parse product data: {e}")
                     st.session_state.parsed_sizes = []
                     st.session_state.parsed_colors = []
+                    st.session_state.mockup_ids = []
+                    st.session_state.smart_object_uuids = []
+                except Exception as e:
+                    st.error(f"Unexpected error loading product data: {str(e)}")
+                    st.session_state.parsed_sizes = []
+                    st.session_state.parsed_colors = []
+                    st.session_state.mockup_ids = []
+                    st.session_state.smart_object_uuids = []
             else:
                 st.error(f"Failed to fetch product with ID {selected_id}")
                 st.session_state.selected_product_data = None
         else:
             st.session_state.selected_product_id = None
             st.session_state.selected_product_data = None
+            st.session_state.mockup_ids = []
+            st.session_state.smart_object_uuids = []
 
     def get_valid_sizes_from_parsed(parsed_sizes):
         """Extract valid size names that match our available options"""
@@ -346,6 +377,276 @@ elif st.session_state.get("authentication_status") is True:
         """Callback for when a file is uploaded"""
         if st.session_state.design_image is not None:
             st.session_state.design_image_data = st.session_state.design_image
+
+    # Define session state variables for multiple mockup handling - move this before generate_product_page
+    if 'mockup_ids' not in st.session_state:
+        st.session_state.mockup_ids = []
+    if 'smart_object_uuids' not in st.session_state:
+        st.session_state.smart_object_uuids = []
+    if 'active_mockup_index' not in st.session_state:
+        st.session_state.active_mockup_index = 0
+    if 'mockup_results_all' not in st.session_state:
+        st.session_state.mockup_results_all = []
+    if 'mockup_generation_progress' not in st.session_state:
+        st.session_state.mockup_generation_progress = 0
+
+    def generate_single_mockup(image_url, color, mockup_id=None, smart_object_uuid=None):
+        """
+        Generate a single mockup using the Dynamic Mockups API
+        
+        Args:
+            image_url (str): URL of the image to use for the mockup
+            color (str): Hex color code for the mockup
+            mockup_id (str, optional): ID of the mockup to use
+            smart_object_uuid (str, optional): UUID of the smart object to use
+            
+        Returns:
+            dict: Mockup data if successful, None otherwise
+        """
+        # Use provided IDs or fall back to defaults
+        MOCKUP_UUID = mockup_id or "db90556b-96a3-483c-ba88-557393b992a1"
+        SMART_OBJECT_UUID = smart_object_uuid or "fb677f24-3dce-4d53-b024-26ea52ea43c9"
+        
+        try:
+            # Create request data according to API documentation format
+            request_data = {
+                "mockup_uuid": MOCKUP_UUID,
+                "smart_objects": [
+                    {
+                        "uuid": SMART_OBJECT_UUID,
+                        "color": color,  # For colored objects
+                        "asset": {
+                            "url": image_url  # Image URL nested inside the asset object
+                        }
+                    }
+                ],
+                "format": "png",
+                "width": 1500,
+                "transparent_background": True
+            }
+            
+            response = requests.post(
+                'https://app.dynamicmockups.com/api/v1/renders',
+                json=request_data,
+                headers={
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    'x-api-key': os.getenv('DYNAMIC_MOCKUPS_API_KEY'),
+                },
+            )
+            
+            if response.status_code != 200:
+                st.error(f"API returned error status: {response.status_code}")
+                st.error(f"Response content: {response.text}")
+                return None
+                
+            result = response.json()
+            
+            # Get the rendered image URL from the response
+            if 'data' in result and 'export_path' in result['data']:
+                mockup_data = {
+                    'rendered_image_url': result['data']['export_path'],
+                    'color': color
+                }
+                return mockup_data
+            else:
+                st.error("Expected 'data.export_path' in API response but it was not found")
+                return None
+                
+        except Exception as e:
+            st.error(f"Error generating mockup: {e}")
+            return None
+
+    def generate_all_mockups(image_url, colors):
+        """
+        Generate mockups for all selected mockups
+        
+        Args:
+            image_url (str): URL of the image uploaded to S3
+            colors (list): List of colors for the mockups in hex format
+            
+        Returns:
+            list: List of mockup data for all generated mockups
+        """
+        import time
+        
+        all_results = []
+        mockup_ids = st.session_state.mockup_ids if hasattr(st.session_state, 'mockup_ids') else []
+        smart_object_uuids = st.session_state.smart_object_uuids if hasattr(st.session_state, 'smart_object_uuids') else []
+        
+        # Validate that we have mockup IDs to process
+        total_mockups = len(mockup_ids)
+        if total_mockups == 0:
+            st.error("No mockup templates available. Please select a product with mockup templates.")
+            return []
+        
+        # Create a progress bar and status text
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        
+        # Debug info
+        st.info(f"Processing {total_mockups} mockup templates with {len(colors)} colors each")
+        st.write(f"Mockup IDs: {mockup_ids}")
+        st.write(f"Smart Object UUIDs: {smart_object_uuids}")
+        
+        # Ensure smart_object_uuids is the same length as mockup_ids by padding with None if needed
+        if len(smart_object_uuids) < total_mockups:
+            st.warning(f"Not enough smart object UUIDs ({len(smart_object_uuids)}) for all mockups ({total_mockups}). Some will use default smart objects.")
+            smart_object_uuids = smart_object_uuids + [None] * (total_mockups - len(smart_object_uuids))
+        
+        # Loop through each mockup ID and smart object UUID pair
+        mockup_count = 0
+        total_progress_steps = total_mockups * len(colors)
+        
+        for i, (mockup_id, smart_object_uuid) in enumerate(zip(mockup_ids, smart_object_uuids)):
+            # Update progress for this mockup
+            progress = (i / total_mockups)
+            progress_bar.progress(progress)
+            status_text.text(f"Processing mockup template {i+1} of {total_mockups}: {mockup_id}")
+            
+            # Skip invalid mockup IDs
+            if not mockup_id:
+                st.warning(f"Skipping mockup {i+1} because no valid mockup ID was found.")
+                continue
+            
+            st.info(f"Generating mockups for template {i+1}: {mockup_id} with smart object: {smart_object_uuid}")
+            
+            # Generate the mockups for this template with all selected colors
+            mockup_results = []
+            for j, color in enumerate(colors):
+                sub_status = st.empty()
+                sub_status.text(f"Generating color {j+1}/{len(colors)}: {color}")
+                
+                # Create request data for this specific mockup ID, smart object UUID, and color
+                result = generate_single_mockup(
+                    image_url,
+                    color,
+                    mockup_id=mockup_id,
+                    smart_object_uuid=smart_object_uuid
+                )
+                
+                if result:
+                    mockup_results.append(result)
+                    mockup_count += 1
+                else:
+                    st.warning(f"Failed to generate mockup for template {mockup_id} with color {color}")
+                
+                # Update progress including color progress
+                current_progress = (i * len(colors) + j + 1) / total_progress_steps
+                progress_bar.progress(min(current_progress, 1.0))
+                
+                sub_status.empty()
+            
+            # Add results for this mockup ID if any were generated
+            if mockup_results:
+                all_results.append({
+                    'mockup_id': mockup_id,
+                    'smart_object_uuid': smart_object_uuid,
+                    'results': mockup_results
+                })
+                st.success(f"Generated {len(mockup_results)} color variations for template {mockup_id}")
+        
+        # Complete the progress bar
+        progress_bar.progress(1.0)
+        status_text.text(f"Successfully generated {mockup_count} mockups across {len(all_results)} templates!")
+        time.sleep(1)
+        status_text.empty()
+        
+        return all_results
+
+    # Initialize session state for tracking product data to save
+    if 'product_data_to_save' not in st.session_state:
+        st.session_state.product_data_to_save = None
+    if 'original_design_url' not in st.session_state:
+        st.session_state.original_design_url = None
+
+    # Initialize session state for color selection and on-demand mockup generation
+    if 'mockup_results' not in st.session_state:
+        st.session_state.mockup_results = None
+    if 'on_demand_colors' not in st.session_state:
+        st.session_state.on_demand_colors = []
+    if 'uploaded_image_url' not in st.session_state:
+        st.session_state.uploaded_image_url = None
+
+    def generate_on_demand_mockup(color_name):
+        """Generate a mockup for a specific color on-demand when selected from dropdown"""
+        if not st.session_state.uploaded_image_url:
+            st.warning("Please upload an image first before generating mockups.")
+            return False
+            
+        # Convert color name to hex
+        hex_color = color_name_to_hex(color_name)
+        
+        # Check if we already have this color mockup
+        if st.session_state.mockup_results and hex_color in st.session_state.mockup_results:
+            # We already have this mockup, no need to generate again
+            return True
+            
+        # Get mockup ID and smart object UUID from selected product if available
+        mockup_id = None
+        smart_object_uuid = None
+        if st.session_state.selected_product_data:
+            mockup_id = st.session_state.selected_product_data.get('mockup_id')
+            smart_object_uuid = st.session_state.selected_product_data.get('smart_object_uuid')
+        
+        with st.spinner(f"Generating mockup for {color_name}..."):
+            # Generate mockup for this specific color
+            mockup_results = generate_mockup(
+                st.session_state.uploaded_image_url,
+                [hex_color],
+                mockup_id=mockup_id,
+                smart_object_uuid=smart_object_uuid
+            )
+            
+            # Add the new mockup to our session state dictionary
+            if mockup_results:
+                if not st.session_state.mockup_results:
+                    st.session_state.mockup_results = {}
+                    
+                st.session_state.mockup_results[hex_color] = mockup_results[0]['rendered_image_url']
+                st.success(f"Generated mockup for {color_name}")
+                return True
+            else:
+                st.error(f"Failed to generate mockup for {color_name}")
+                return False
+
+    def on_color_change(key_prefix):
+        """Callback for when a color is changed in dropdown"""
+        color_key = f"{key_prefix}_color"
+        if color_key in st.session_state:
+            selected_color = st.session_state[color_key]
+            generate_on_demand_mockup(selected_color)
+
+    # Initialize specific session state variables for tracking mockup panel selections
+    if 'mockup_panel_colors' not in st.session_state:
+        st.session_state.mockup_panel_colors = {}
+    if 'generate_for_panel' not in st.session_state:
+        st.session_state.generate_for_panel = None
+    if 'generate_color' not in st.session_state:
+        st.session_state.generate_color = None
+
+    # Add a function to handle color selection changes
+    def on_mockup_color_change(mockup_idx):
+        """Handle color change in the mockup preview panel"""
+        if mockup_idx not in st.session_state.panel_color_mapping:
+            return
+            
+        preview_key = f"preview_{mockup_idx}_color"
+        selected_color = st.session_state[preview_key]
+        hex_selected = color_name_to_hex(selected_color)
+        
+        # Store the selected color in our tracking dictionary
+        st.session_state.mockup_panel_colors[mockup_idx] = selected_color
+        
+        # If we don't have this color yet, generate it
+        if hex_selected not in st.session_state.mockup_results:
+            # Set only once to avoid double triggering
+            if st.session_state.generate_for_panel is None:
+                st.session_state.generate_for_panel = mockup_idx
+                st.session_state.generate_color = selected_color
+        else:
+            # If we already have this color, update the panel mapping directly
+            st.session_state.panel_color_mapping[mockup_idx] = hex_selected
 
     def generate_product_page():
         st.title("Generate Product")
@@ -568,6 +869,78 @@ elif st.session_state.get("authentication_status") is True:
                         st.error("Failed to generate any mockups. See error details above.")
                         st.session_state.mockup_results = None
                         
+            # Generate All Mockups button - now inside the function with access to design_image
+            if st.button("Generate All Mockups"):
+                if not design_image:
+                    st.error("Please upload a design image to generate mockups.")
+                else:
+                    # Validate we have all required data
+                    if not colors:
+                        st.warning("No colors selected. Using default color (Red).")
+                        selected_colors = ["Red"]
+                    else:
+                        selected_colors = colors
+                    
+                    # Check if we have mockups to generate
+                    if not hasattr(st.session_state, 'mockup_ids') or not st.session_state.mockup_ids:
+                        st.error("No mockup templates available. Please select a product with mockup templates.")
+                    else:
+                        # Step 1: Upload image to S3
+                        with st.spinner("Uploading image to S3..."):
+                            image_url = upload_image_file_to_s3(design_image, folder="original")
+                            
+                            # Ensure the S3 upload was successful before proceeding
+                            if not image_url:
+                                st.error("Failed to upload image to S3. Please check your AWS configuration.")
+                            else:
+                                # Store the uploaded image URL for possible on-demand mockup generation later
+                                st.session_state.uploaded_image_url = image_url
+                                st.session_state.original_design_url = image_url
+                                
+                                # Success! Show the uploaded image URL
+                                st.success("✅ Image uploaded to S3")
+                        
+                                # Step 2: Generate mockups for all selected mockups
+                                with st.spinner("Generating mockups for all templates..."):
+                                    # Convert color names to hex format
+                                    color_hex_list = [color_name_to_hex(color) for color in selected_colors]
+                                    
+                                    # Generate all mockups
+                                    all_mockup_results = generate_all_mockups(image_url, color_hex_list)
+                                    
+                                    # Store the mockup results in session state
+                                    if all_mockup_results:
+                                        st.session_state.mockup_results_all = all_mockup_results
+                                        
+                                        # For backwards compatibility, set the first mockup result as the current one
+                                        if all_mockup_results and 'results' in all_mockup_results[0]:
+                                            # Create a dictionary mapping hex colors to their rendered URLs for easier lookup
+                                            mockup_dict = {mockup['color']: mockup['rendered_image_url'] 
+                                                        for mockup in all_mockup_results[0]['results']}
+                                            st.session_state.mockup_results = mockup_dict
+                                        
+                                        # Make sure we have the latest SKU
+                                        current_sku = update_design_sku()
+                                        
+                                        # Store the selected product details to save later
+                                        st.session_state.product_data_to_save = {
+                                            "design_name": design_name,
+                                            "marketplace_title": marketplace_title,
+                                            "design_sku": current_sku,
+                                            "sizes": sizes,
+                                            "colors": colors,
+                                            "original_design_url": image_url,
+                                            "all_mockup_results": all_mockup_results
+                                        }
+                                        
+                                        # Success! Show the generated mockups
+                                        total_mockups = sum(len(result['results']) for result in all_mockup_results)
+                                        st.success(f"✅ Generated {total_mockups} mockups for {len(all_mockup_results)} templates successfully!")
+                                    else:
+                                        st.error("Failed to generate any mockups. See error details above.")
+                                        st.session_state.mockup_results = None
+                                        st.session_state.mockup_results_all = []
+            
             # Add Save Product button that appears only after mockups are generated
             if st.session_state.mockup_results and hasattr(st.session_state, 'product_data_to_save'):
                 if st.button("Save Product to Database", key="save_product_button"):
@@ -714,6 +1087,175 @@ elif st.session_state.get("authentication_status") is True:
                                 st.error(f"Error saving product to database: {str(e)}")
                         else:
                             st.error("No mockups were successfully saved to S3. Cannot save product.")
+
+            # Add Save All Mockups button that appears only after mockups are generated
+            if hasattr(st.session_state, 'mockup_results_all') and st.session_state.mockup_results_all and hasattr(st.session_state, 'product_data_to_save'):
+                if st.button("Save All Mockups to Database", key="save_all_mockups_button"):
+                    with st.spinner("Saving all mockups to S3 and database..."):
+                        # Make sure we have the latest SKU before saving
+                        design_sku = st.session_state.product_data_to_save["design_sku"]
+                        if not design_sku:
+                            design_sku = update_design_sku()
+                            st.session_state.product_data_to_save["design_sku"] = design_sku
+                        
+                        # Import necessary libraries upfront
+                        import tempfile
+                        import os
+                        import boto3
+                        from botocore.exceptions import ClientError
+                        
+                        # Initialize S3 client once
+                        s3_client = boto3.client('s3', 
+                            aws_access_key_id=os.environ.get('AWS_ACCESS_KEY_ID'),
+                            aws_secret_access_key=os.environ.get('AWS_SECRET_ACCESS_KEY'),
+                            region_name=os.environ.get('AWS_REGION', 'us-east-1')
+                        )
+                        bucket_name = os.environ.get('AWS_BUCKET_NAME', 'streamlet')
+                        region = os.environ.get('AWS_REGION', 'us-east-1')
+                        
+                        # Save all generated mockups
+                        all_mockup_s3_urls = {}
+                        all_mockup_results = st.session_state.product_data_to_save["all_mockup_results"]
+                        
+                        # Set up progress tracking
+                        total_mockups = sum(len(result['results']) for result in all_mockup_results)
+                        progress_bar = st.progress(0)
+                        completed = 0
+                        
+                        # Create a temp directory for all files
+                        temp_dir = tempfile.mkdtemp()
+                        
+                        # Process each mockup set
+                        for mockup_set_idx, mockup_set in enumerate(all_mockup_results):
+                            mockup_id = mockup_set['mockup_id']
+                            mockup_s3_urls = {}
+                            
+                            # Process each mockup in this set
+                            for mockup in mockup_set['results']:
+                                hex_color = mockup['color']
+                                mockup_url = mockup['rendered_image_url']
+                                
+                                try:
+                                    # Download and upload to S3
+                                    response = requests.get(mockup_url, timeout=15)
+                                    if response.status_code == 200:
+                                        # Create color-specific filename
+                                        color_name = hex_to_color_name(hex_color) or hex_color.lstrip('#')
+                                        local_filename = f"mockup_{design_sku}_{color_name}_{mockup_id[-6:]}.png"
+                                        local_filepath = os.path.join(temp_dir, local_filename)
+                                        
+                                        # Save to temp file
+                                        with open(local_filepath, 'wb') as f:
+                                            f.write(response.content)
+                                        
+                                        # Upload to S3
+                                        s3_key = f"mockups/{local_filename}"
+                                        try:
+                                            s3_client.upload_file(
+                                                local_filepath,
+                                                bucket_name,
+                                                s3_key,
+                                                ExtraArgs={
+                                                    'ContentType': 'image/png',
+                                                    'StorageClass': 'STANDARD',
+                                                },
+                                                Config=boto3.s3.transfer.TransferConfig(
+                                                    use_threads=True,
+                                                    max_concurrency=10,
+                                                    multipart_threshold=8388608,  # 8MB
+                                                    multipart_chunksize=8388608,  # 8MB
+                                                )
+                                            )
+                                            
+                                            # Generate the URL for the uploaded file
+                                            s3_url = f"https://{bucket_name}.s3.{region}.amazonaws.com/{s3_key}"
+                                            mockup_s3_urls[hex_color] = s3_url
+                                        except Exception as e:
+                                            st.warning(f"Error uploading to S3: {e}")
+                                        
+                                        # Clean up temp file (keep directory)
+                                        try:
+                                            os.unlink(local_filepath)
+                                        except Exception:
+                                            pass
+                                    else:
+                                        st.warning(f"Failed to download mockup (Status: {response.status_code})")
+                                    
+                                except Exception as e:
+                                    st.warning(f"Error processing mockup: {e}")
+                                
+                                # Update progress
+                                completed += 1
+                                progress_bar.progress(completed / total_mockups)
+                            
+                            # Store this mockup set's S3 URLs
+                            all_mockup_s3_urls[mockup_id] = mockup_s3_urls
+                        
+                        # Clean up temp directory
+                        import shutil
+                        try:
+                            shutil.rmtree(temp_dir)
+                        except Exception:
+                            pass
+                        
+                        # Get parent SKU from selected product if available
+                        parent_sku = ""
+                        if st.session_state.selected_product_id:
+                            parent_product = db.get_product(st.session_state.selected_product_id)
+                            if parent_product and 'item_sku' in parent_product:
+                                parent_sku = parent_product['item_sku']
+                        
+                        # Save all products to database - one for each mockup template/type
+                        product_data = st.session_state.product_data_to_save
+                        success_count = 0
+                        
+                        for mockup_set_idx, mockup_set in enumerate(all_mockup_results):
+                            mockup_id = mockup_set['mockup_id']
+                            mockup_s3_urls = all_mockup_s3_urls.get(mockup_id, {})
+                            
+                            if mockup_s3_urls:
+                                try:
+                                    # Generate a unique SKU suffix for each mockup template
+                                    sku_suffix = f"-{mockup_set_idx+1}" if mockup_set_idx > 0 else ""
+                                    current_design_sku = f"{design_sku}{sku_suffix}"
+                                    
+                                    # Create product data dictionary for this mockup template
+                                    product_dict = {
+                                        "product_name": f"{product_data['design_name']} - Template {mockup_set_idx+1}",
+                                        "marketplace_title": product_data["marketplace_title"],
+                                        "item_sku": current_design_sku,
+                                        "parent_sku": parent_sku,
+                                        "size": json.dumps(product_data["sizes"]),
+                                        "color": json.dumps([color_name_to_hex(color) for color in product_data["colors"]]),
+                                        "original_design_url": product_data["original_design_url"],
+                                        "mockup_urls": json.dumps(mockup_s3_urls),
+                                        "mockup_id": mockup_id,
+                                        "smart_object_uuid": mockup_set.get('smart_object_uuid')
+                                    }
+                                    
+                                    # Add parent_product_id if editing an existing product
+                                    if st.session_state.selected_product_id:
+                                        product_dict["parent_product_id"] = st.session_state.selected_product_id
+                                    
+                                    # Save to database
+                                    new_id = db.create_generated_product(product_dict)
+                                    if new_id:
+                                        success_count += 1
+                                except Exception as e:
+                                    st.error(f"Error saving mockup set {mockup_set_idx+1}: {str(e)}")
+                        
+                        if success_count > 0:
+                            st.success(f"Successfully saved {success_count} of {len(all_mockup_results)} mockup templates to database!")
+                            # Clear the data to avoid re-saving
+                            st.session_state.product_data_to_save = None
+                            
+                            # Show a link to the Product List page to view the saved products
+                            if st.button("Go to Product List to view your new products"):
+                                # This will redirect to the Product List page
+                                st.experimental_set_query_params(page="product_list")
+                                st.rerun()
+                        else:
+                            st.error("Failed to save any mockups to database. Check the errors above.")
 
         # Initialize the mockup color tracking
         if 'original_mockup_colors' not in st.session_state:
@@ -889,99 +1431,76 @@ elif st.session_state.get("authentication_status") is True:
                     else:
                         st.image("https://via.placeholder.com/150", width=150, caption=color3)
 
-    # Initialize session state for tracking product data to save
-    if 'product_data_to_save' not in st.session_state:
-        st.session_state.product_data_to_save = None
-    if 'original_design_url' not in st.session_state:
-        st.session_state.original_design_url = None
-
-    # Initialize session state for color selection and on-demand mockup generation
-    if 'mockup_results' not in st.session_state:
-        st.session_state.mockup_results = None
-    if 'on_demand_colors' not in st.session_state:
-        st.session_state.on_demand_colors = []
-    if 'uploaded_image_url' not in st.session_state:
-        st.session_state.uploaded_image_url = None
-
-    def generate_on_demand_mockup(color_name):
-        """Generate a mockup for a specific color on-demand when selected from dropdown"""
-        if not st.session_state.uploaded_image_url:
-            st.warning("Please upload an image first before generating mockups.")
-            return False
-            
-        # Convert color name to hex
-        hex_color = color_name_to_hex(color_name)
-        
-        # Check if we already have this color mockup
-        if st.session_state.mockup_results and hex_color in st.session_state.mockup_results:
-            # We already have this mockup, no need to generate again
-            return True
-            
-        # Get mockup ID and smart object UUID from selected product if available
-        mockup_id = None
-        smart_object_uuid = None
-        if st.session_state.selected_product_data:
-            mockup_id = st.session_state.selected_product_data.get('mockup_id')
-            smart_object_uuid = st.session_state.selected_product_data.get('smart_object_uuid')
-        
-        with st.spinner(f"Generating mockup for {color_name}..."):
-            # Generate mockup for this specific color
-            mockup_results = generate_mockup(
-                st.session_state.uploaded_image_url,
-                [hex_color],
-                mockup_id=mockup_id,
-                smart_object_uuid=smart_object_uuid
-            )
-            
-            # Add the new mockup to our session state dictionary
-            if mockup_results:
-                if not st.session_state.mockup_results:
-                    st.session_state.mockup_results = {}
-                    
-                st.session_state.mockup_results[hex_color] = mockup_results[0]['rendered_image_url']
-                st.success(f"Generated mockup for {color_name}")
-                return True
-            else:
-                st.error(f"Failed to generate mockup for {color_name}")
-                return False
-
-    def on_color_change(key_prefix):
-        """Callback for when a color is changed in dropdown"""
-        color_key = f"{key_prefix}_color"
-        if color_key in st.session_state:
-            selected_color = st.session_state[color_key]
-            generate_on_demand_mockup(selected_color)
-
-    # Initialize specific session state variables for tracking mockup panel selections
-    if 'mockup_panel_colors' not in st.session_state:
-        st.session_state.mockup_panel_colors = {}
-    if 'generate_for_panel' not in st.session_state:
-        st.session_state.generate_for_panel = None
-    if 'generate_color' not in st.session_state:
-        st.session_state.generate_color = None
-
-    # Add a function to handle color selection changes
-    def on_mockup_color_change(mockup_idx):
-        """Handle color change in the mockup preview panel"""
-        if mockup_idx not in st.session_state.panel_color_mapping:
-            return
-            
-        preview_key = f"preview_{mockup_idx}_color"
-        selected_color = st.session_state[preview_key]
-        hex_selected = color_name_to_hex(selected_color)
-        
-        # Store the selected color in our tracking dictionary
-        st.session_state.mockup_panel_colors[mockup_idx] = selected_color
-        
-        # If we don't have this color yet, generate it
-        if hex_selected not in st.session_state.mockup_results:
-            # Set only once to avoid double triggering
-            if st.session_state.generate_for_panel is None:
-                st.session_state.generate_for_panel = mockup_idx
-                st.session_state.generate_color = selected_color
-        else:
-            # If we already have this color, update the panel mapping directly
-            st.session_state.panel_color_mapping[mockup_idx] = hex_selected
-
     # Call the function to render the page
     generate_product_page()
+
+# Display preview of all generated mockup sets
+if hasattr(st.session_state, 'mockup_results_all') and st.session_state.mockup_results_all:
+    st.subheader("All Generated Mockups")
+    
+    # Create tabs for each mockup set
+    mockup_tabs = st.tabs([f"Template {i+1}" for i in range(len(st.session_state.mockup_results_all))])
+    
+    # Display mockups for each template
+    for i, (tab, mockup_set) in enumerate(zip(mockup_tabs, st.session_state.mockup_results_all)):
+        with tab:
+            st.write(f"Mockup ID: {mockup_set['mockup_id']}")
+            
+            # Group mockups by color
+            results_by_color = {}
+            for result in mockup_set['results']:
+                hex_color = result['color']
+                color_name = hex_to_color_name(hex_color) or hex_color
+                results_by_color[color_name] = result['rendered_image_url']
+            
+            # Display color selector
+            color_options = list(results_by_color.keys())
+            if color_options:
+                selected_color = st.selectbox(
+                    "Select Color",
+                    options=color_options,
+                    key=f"color_selector_{i}"
+                )
+                
+                # Display the selected mockup
+                st.image(
+                    results_by_color[selected_color],
+                    caption=f"Mockup Template {i+1} - {selected_color}",
+                    use_container_width=True
+                )
+            else:
+                st.warning("No mockups generated for this template.")
+
+# Define a helper function to upload files to S3
+def upload_to_s3(local_path, s3_key):
+    try:
+        import boto3
+        from botocore.exceptions import ClientError
+        import os
+        
+        s3_client = boto3.client(
+            's3',
+            aws_access_key_id=os.environ.get('AWS_ACCESS_KEY_ID'),
+            aws_secret_access_key=os.environ.get('AWS_SECRET_ACCESS_KEY'),
+            region_name=os.environ.get('AWS_REGION', 'us-east-1')
+        )
+        
+        bucket_name = os.environ.get('S3_BUCKET_NAME', 'streamlet')
+        region = os.environ.get('AWS_REGION', 'us-east-1')
+        
+        # Upload the file
+        s3_client.upload_file(
+            local_path,
+            bucket_name,
+            s3_key,
+            ExtraArgs={
+                'ContentType': 'image/png',
+            }
+        )
+        
+        # Generate the URL for the uploaded file
+        s3_url = f"https://{bucket_name}.s3.{region}.amazonaws.com/{s3_key}"
+        return s3_url
+    except Exception as e:
+        st.error(f"Error uploading to S3: {e}")
+        return None
