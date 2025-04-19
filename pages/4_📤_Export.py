@@ -22,7 +22,7 @@ authenticator = stauth.Authenticate(
 )
 
 if not st.session_state.get("authentication_status"):
-    # Show login form
+    # Show login form 
     authenticator.login(location='main')
     # Check authentication status after login attempt
         # Successfully authenticated, save to session state

@@ -18,7 +18,7 @@ st.set_page_config(
 st.markdown(load_css(), unsafe_allow_html=True)
 
 # Load configuration
-with open('config.yaml') as file:
+with open('config.yaml') as file: 
     config = yaml.load(file, Loader=SafeLoader)
 
 # Initialize authenticator

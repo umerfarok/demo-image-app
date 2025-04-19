@@ -134,7 +134,7 @@ elif st.session_state.get("authentication_status") is True:
     st.subheader("Quick Links")
 
     col1, col2, col3 = st.columns(3)
-
+ 
     with col1:
         if st.button("Add New Product", use_container_width=True):
             st.experimental_set_query_params(page="add_product")

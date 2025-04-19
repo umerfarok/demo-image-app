@@ -10,7 +10,7 @@ from utils.s3_storage import upload_image_file_to_s3, check_s3_connection
 import yaml
 from yaml.loader import SafeLoader
 import streamlit_authenticator as stauth
-
+ 
 # Load environment variables from . 
 load_dotenv()
 
@@ -389,6 +389,8 @@ elif st.session_state.get("authentication_status") is True:
         st.session_state.mockup_results_all = []
     if 'mockup_generation_progress' not in st.session_state:
         st.session_state.mockup_generation_progress = 0
+    if 'template_color_index' not in st.session_state:
+        st.session_state.template_color_index = None
 
     def generate_single_mockup(image_url, color, mockup_id=None, smart_object_uuid=None):
         """
@@ -603,7 +605,20 @@ elif st.session_state.get("authentication_status") is True:
                 if not st.session_state.mockup_results:
                     st.session_state.mockup_results = {}
                     
+                # Add the new mockup to our results dictionary
                 st.session_state.mockup_results[hex_color] = mockup_results[0]['rendered_image_url']
+                
+                # If we're replacing a color, we should remove the old color after the new one is generated
+                if hasattr(st.session_state, 'replaced_color') and st.session_state.replaced_color:
+                    # Check if this is not the same as the color we're adding (to avoid accidental removal)
+                    if st.session_state.replaced_color != hex_color:
+                        # Remove the old color if it exists
+                        if st.session_state.replaced_color in st.session_state.mockup_results:
+                            del st.session_state.mockup_results[st.session_state.replaced_color]
+                    
+                    # Clear the replaced color to avoid removing it multiple times
+                    st.session_state.replaced_color = None
+                
                 st.success(f"Generated mockup for {color_name}")
                 return True
             else:
@@ -644,8 +659,18 @@ elif st.session_state.get("authentication_status") is True:
             if st.session_state.generate_for_panel is None:
                 st.session_state.generate_for_panel = mockup_idx
                 st.session_state.generate_color = selected_color
+                # Remember the original color we're replacing
+                original_hex = st.session_state.panel_color_mapping.get(mockup_idx)
+                if original_hex:
+                    st.session_state.replaced_color = original_hex
         else:
             # If we already have this color, update the panel mapping directly
+            # Store the previous color to allow removal after successful load
+            original_hex = st.session_state.panel_color_mapping.get(mockup_idx)
+            if original_hex and original_hex != hex_selected:
+                st.session_state.replaced_color = original_hex
+                
+            # Update the mapping to the new color
             st.session_state.panel_color_mapping[mockup_idx] = hex_selected
 
     def generate_product_page():
@@ -1052,10 +1077,14 @@ elif st.session_state.get("authentication_status") is True:
             hex_color = color_name_to_hex(color_name)
             
             # Check if we already have this color for this template
-            if hasattr(template, 'results'):
-                for result in template['results']:
+            existing_index = None
+            if 'results' in template:
+                for i, result in enumerate(template['results']):
                     if result['color'] == hex_color:
                         return True  # Already have this color
+            
+            # If we're replacing an existing color position, store which index to replace
+            color_index = st.session_state.get('template_color_index')
             
             with st.spinner(f"Generating {color_name} mockup for Template {template_idx + 1}..."):
                 # Generate the single mockup for this template and color
@@ -1067,15 +1096,27 @@ elif st.session_state.get("authentication_status") is True:
                 )
                 
                 if result:
-                    # Add result to template results
+                    # Ensure results list exists
                     if 'results' not in template:
                         template['results'] = []
-                    template['results'].append(result)
+                    
+                    # If we're replacing a specific color position and it exists
+                    if color_index is not None and color_index < len(template['results']):
+                        # Replace existing color at specified position
+                        template['results'][color_index] = result
+                        st.success(f"Replaced {color_name} mockup for Template {template_idx + 1}")
+                    else:
+                        # Add new result
+                        template['results'].append(result)
+                        st.success(f"Generated new {color_name} mockup for Template {template_idx + 1}")
                     
                     # Update the mockup_results_all in session state
                     st.session_state.mockup_results_all[template_idx] = template
                     
-                    st.success(f"Generated {color_name} mockup for Template {template_idx + 1}")
+                    # Clear the color index after use
+                    if 'template_color_index' in st.session_state:
+                        del st.session_state.template_color_index
+                        
                     return True
                 else:
                     st.error(f"Failed to generate {color_name} mockup for Template {template_idx + 1}")
@@ -1110,6 +1151,9 @@ elif st.session_state.get("authentication_status") is True:
             if not mockup_exists:
                 st.session_state.template_generate_mockup = template_idx
                 st.session_state.template_generate_color = selected_color
+                
+                # Store the color index so we know which mockup to replace
+                st.session_state.template_color_index = color_index
 
         with right_col:
             # Preview by color
@@ -1157,8 +1201,9 @@ elif st.session_state.get("authentication_status") is True:
                         st.warning(f"No recognized colors in the generated mockups for Template {template_idx + 1}")
                         continue
                     
-                    # Display only the mockups that are already generated
-                    cols = st.columns(min(3, len(generated_color_names)))
+                    # Display all the mockups that are already generated - use dynamic number of columns based on count
+                    num_colors = len(generated_color_names)
+                    cols = st.columns(num_colors)  # Create as many columns as there are colors
                     
                     for i, col in enumerate(cols):
                         if i < len(generated_color_names):
@@ -1203,11 +1248,24 @@ elif st.session_state.get("authentication_status") is True:
                                     if not mockup_exists:
                                         # We need to generate this color
                                         st.warning(f"No mockup for {selected_color} yet")
-                                        if st.button(f"Generate {selected_color}", key=f"gen_{template_idx}_{i}"):
-                                            # Schedule generation for next rerun
-                                            st.session_state.template_generate_mockup = template_idx
-                                            st.session_state.template_generate_color = selected_color
-                                            st.rerun()
+                                        
+                                        # Check if this is currently being generated
+                                        is_generating = (st.session_state.get('template_generate_mockup') == template_idx and 
+                                                        st.session_state.get('template_generate_color') == selected_color and
+                                                        st.session_state.get('template_color_index') == i)
+                                        
+                                        if is_generating:
+                                            # Show loading state
+                                            with st.spinner(f"Generating {selected_color} mockup..."):
+                                                st.markdown("⏳ Generating mockup...")
+                                        else:
+                                            # Show generate button
+                                            if st.button(f"Generate {selected_color}", key=f"gen_{template_idx}_{i}"):
+                                                # Schedule generation for next rerun
+                                                st.session_state.template_generate_mockup = template_idx
+                                                st.session_state.template_generate_color = selected_color
+                                                st.session_state.template_color_index = i
+                                                st.rerun()
                                 else:
                                     # Show the original color mockup
                                     st.image(
@@ -1254,7 +1312,9 @@ elif st.session_state.get("authentication_status") is True:
                         st.rerun()
                 
                 # Display only the mockups we have generated, in a grid
-                cols = st.columns(min(3, len(available_mockup_colors)))
+                # Use dynamic number of columns based on the number of available mockups
+                num_mockups = len(available_mockup_colors)
+                cols = st.columns(num_mockups)  # Create one column per mockup
                 
                 for i, col in enumerate(cols):
                     if i < len(available_mockup_colors):
@@ -1311,60 +1371,40 @@ elif st.session_state.get("authentication_status") is True:
             # Case when no mockups have been generated yet
             else:
                 st.info("Generate mockups to see previews here")
-                # Create 3 columns for color selection dropdowns
-                col1, col2, col3 = st.columns(3)
                 
                 # Only show colors that were selected for the product
                 available_colors = colors if colors else AVAILABLE_COLORS
                 
-                with col1:
-                    color1 = st.selectbox(
-                        "Select Color 1", 
-                        available_colors,
-                        key="preview1_color"
-                    )
-                    
-                    # Show placeholder if no mockup available yet
-                    if design_image:
-                        st.image(design_image, width=150, caption=f"{color1} (Preview Only)")
-                        if st.session_state.uploaded_image_url:
-                            if st.button("Generate Mockup", key="gen_mockup1"):
-                                if generate_on_demand_mockup(color1):
-                                 st.rerun()
-                    else:
-                        st.image("https://via.placeholder.com/150", width=150, caption=color1)
+                # Create dynamic number of columns based on available colors
+                # Limit to a reasonable number to maintain UI usability
+                num_preview_cols = min(len(available_colors), 5) if available_colors else 3
+                preview_cols = st.columns(num_preview_cols)
                 
-                with col2:
-                    color2 = st.selectbox(
-                        "Select Color 2", 
-                        available_colors,
-                        key="preview2_color"
-                    )
-                    
-                    # Show placeholder if no mockup available yet
-                    if design_image:
-                        st.image(design_image, width=150, caption=f"{color2} (Preview Only)")
-                        if st.session_state.uploaded_image_url:
-                            if st.button("Generate Mockup", key="gen_mockup2"):
-                                if generate_on_demand_mockup(color2):
-                                 st.rerun()
-                    else:
-                        st.image("https://via.placeholder.com/150", width=150, caption=color2)
-                
-                with col3:
-                    color3 = st.selectbox(
-                        "Select Color 3", 
-                        available_colors,
-                        key="preview3_color"
-                    )
-                    
-                    # Show placeholder if no mockup available yet
-                    if design_image:
-                        st.image(design_image, width=150, caption=f"{color3} (Preview Only)")
-                        if st.session_state.uploaded_image_url:
-                            if st.button("Generate Mockup", key="gen_mockup3"):
-                                if generate_on_demand_mockup(color3):
-                                 st.rerun()
+                # Display color selection for each column
+                for i, col in enumerate(preview_cols):
+                    with col:
+                        # Create a unique key for each color preview
+                        preview_key = f"preview{i+1}_color"
+                        
+                        if i < len(available_colors):
+                            # Default to the actual selected color at this position
+                            default_index = 0
+                            color_option = st.selectbox(
+                                f"Select Color {i+1}", 
+                                available_colors,
+                                index=i,  # Default to the color at this position
+                                key=preview_key
+                            )
+                            
+                            # Show placeholder if no mockup available yet
+                            if design_image:
+                                st.image(design_image, width=150, caption=f"{color_option} (Preview Only)")
+                                if st.session_state.uploaded_image_url:
+                                    if st.button(f"Generate {color_option}", key=f"gen_mockup{i+1}"):
+                                        if generate_on_demand_mockup(color_option):
+                                            st.rerun()
+                            else:
+                                st.image("https://via.placeholder.com/150", width=150, caption=color_option)
 
     # Call the function to render the page
     generate_product_page()
@@ -1401,4 +1441,4 @@ def upload_to_s3(local_path, s3_key):
         return s3_url
     except Exception as e:
         st.error(f"Error uploading to S3: {e}")
-        return None 
+        return None

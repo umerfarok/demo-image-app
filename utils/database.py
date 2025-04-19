@@ -16,7 +16,7 @@ def init_connection_pool():
     global connection_pool
     if connection_pool is not None:
         return connection_pool
-        
+         
     try:
         # Configure pool with connection parameters
         pool_config = {

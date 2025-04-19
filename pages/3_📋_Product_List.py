@@ -8,7 +8,7 @@ from utils.api import is_s3_url
 from utils.s3_storage import get_image_from_s3_url
 from utils.color_utils import hex_to_color_name  # Import the new function
 import yaml
-from yaml.loader import SafeLoader
+from yaml.loader import SafeLoader 
 import streamlit_authenticator as stauth
  
 # Page configuration

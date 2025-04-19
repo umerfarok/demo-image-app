@@ -12,7 +12,7 @@ venv/
 env/
 .env/
 .venv/
-
+venvgpu
 # Generated image files
 images/*
 !images/.gitkeep
