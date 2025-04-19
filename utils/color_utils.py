@@ -94,3 +94,55 @@ def hex_to_color_name(hex_code):
         # If any error occurs, return the original hex code without #
         print(f"Color conversion error: {e}")
         return hex_code.replace('#', '')
+
+def color_name_to_hex(color_name):
+    """
+    Convert common color names to their hex values
+    
+    Args:
+        color_name (str): Color name
+        
+    Returns:
+        str: Hex color code
+    """
+    color_map = {
+        "Black": "#000000",
+        "White": "#FFFFFF",
+        "Navy": "#000080",
+        "Grey": "#808080",
+        "Red": "#FF0000",
+        "Blue": "#0000FF",
+        "Green": "#008000",
+        "Yellow": "#FFFF00",
+        "Purple": "#800080"
+    }
+    return color_map.get(color_name, "#FF0000")  # Default to red if color not found
+
+def hex_to_color_name(hex_color):
+    """
+    Convert a hex color value to a color name
+    
+    Args:
+        hex_color (str): Hex color code (with or without #)
+        
+    Returns:
+        str: Color name or original hex if no mapping found
+    """
+    # Remove # if present and convert to uppercase
+    hex_color = hex_color.upper().lstrip('#')
+    
+    # Create reverse mapping of color_map
+    hex_to_name = {
+        "000000": "Black",
+        "FFFFFF": "White", 
+        "000080": "Navy",
+        "808080": "Grey",
+        "FF0000": "Red",
+        "0000FF": "Blue",
+        "008000": "Green",
+        "FFFF00": "Yellow",
+        "800080": "Purple"
+    }
+    
+    # Return matching color name or the original hex
+    return hex_to_name.get(hex_color, hex_color)

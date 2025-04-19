@@ -16,7 +16,7 @@ def init_connection_pool():
     global connection_pool
     if connection_pool is not None:
         return connection_pool
-        
+         
     try:
         # Configure pool with connection parameters
         pool_config = {
@@ -29,7 +29,7 @@ def init_connection_pool():
             'user': DB_CONFIG['user'],
             'password': DB_CONFIG['password'],
             'use_pure': True,
-        }
+        } 
         
         # Add SSL configuration if needed
         if DB_CONFIG.get('ssl_mode') == 'REQUIRED' and os.path.exists(DB_CONFIG.get('ssl_ca', '')):
@@ -266,7 +266,9 @@ class Database:
             price DECIMAL(10, 2) NOT NULL DEFAULT 0.00,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             mockup_id VARCHAR(100) NULL,
-            smart_object_uuid VARCHAR(100) NULL
+            smart_object_uuid VARCHAR(100) NULL,
+            mockup_ids TEXT NULL,
+            smart_object_uuids TEXT NULL
         )
         """
         self.cursor.execute(create_products_table)
@@ -321,6 +323,16 @@ class Database:
             if not self.cursor.fetchone():
                 self.cursor.execute("ALTER TABLE generated_products ADD COLUMN parent_sku VARCHAR(100) NULL")
                 
+            # Check if mockup_ids column exists
+            self.cursor.execute("SHOW COLUMNS FROM products LIKE 'mockup_ids'")
+            if not self.cursor.fetchone():
+                self.cursor.execute("ALTER TABLE products ADD COLUMN mockup_ids TEXT NULL")
+            
+            # Check if smart_object_uuids column exists
+            self.cursor.execute("SHOW COLUMNS FROM products LIKE 'smart_object_uuids'")
+            if not self.cursor.fetchone():
+                self.cursor.execute("ALTER TABLE products ADD COLUMN smart_object_uuids TEXT NULL")
+            
             self.connection.commit()
         except Error as e:
             st.error(f"Error modifying tables: {e}")
@@ -374,8 +386,8 @@ class Database:
             INSERT INTO products (
                 product_name, item_sku, parent_child, parent_sku, size, color, 
                 image_url, marketplace_title, category, tax_class, quantity, price,
-                mockup_id, smart_object_uuid
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                mockup_id, smart_object_uuid, mockup_ids, smart_object_uuids
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """
             values = (
                 product_data['product_name'],
@@ -392,6 +404,8 @@ class Database:
                 product_data['price'],
                 product_data['mockup_id'],
                 product_data['smart_object_uuid'],
+                product_data.get('mockup_ids', None),
+                product_data.get('smart_object_uuids', None),
             )
             
             self.cursor.execute(query, values)
@@ -497,7 +511,11 @@ class Database:
                 category = %s,
                 tax_class = %s,
                 quantity = %s,
-                price = %s
+                price = %s,
+                mockup_id = %s,
+                smart_object_uuid = %s,
+                mockup_ids = %s,
+                smart_object_uuids = %s
             WHERE id = %s
             """
             values = (
@@ -513,6 +531,10 @@ class Database:
                 product_data['tax_class'],
                 product_data['quantity'],
                 product_data['price'],
+                product_data['mockup_id'],
+                product_data['smart_object_uuid'],
+                product_data.get('mockup_ids', None),
+                product_data.get('smart_object_uuids', None),
                 product_id
             )
             
@@ -842,6 +864,31 @@ class Database:
         except Exception as e:
             st.error(f"Error checking if SKU exists: {e}")
             return False
+
+    def get_related_products_by_design(self, design_url, exclude_id=None):
+        """Get all generated products that use the same original design"""
+        try:
+            query = """
+                SELECT * FROM generated_products 
+                WHERE original_design_url = %s
+            """
+            params = [design_url]
+            
+            # Exclude the current product if specified
+            if exclude_id is not None:
+                query += " AND id != %s"
+                params.append(exclude_id)
+                
+            # Order by id to get a consistent order
+            query += " ORDER BY id"
+            
+            self.cursor.execute(query, params)
+            columns = [col[0] for col in self.cursor.description]
+            result = [dict(zip(columns, row)) for row in self.cursor.fetchall()]
+            return pd.DataFrame(result)
+        except Exception as e:
+            print(f"Error getting related products: {e}")
+            return pd.DataFrame()
     
     def __del__(self):
         """Close database connection when object is destroyed"""

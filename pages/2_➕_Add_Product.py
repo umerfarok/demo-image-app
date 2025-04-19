@@ -11,7 +11,7 @@ import streamlit_authenticator as stauth
 with open('config.yaml') as file:
     config = yaml.load(file, Loader=SafeLoader)
 
-# Initialize authenticator
+# Initialize authenticator 
 authenticator = stauth.Authenticate(
     config['credentials'],
     config['cookie']['name'],
@@ -69,6 +69,12 @@ elif st.session_state.get("authentication_status") is True:
     if 'sku' not in st.session_state:
         st.session_state.sku = ""  # Initialize SKU as empty string
 
+    # Initialize session state for mockup selections if not already done
+    if 'mockup_selections' not in st.session_state:
+        st.session_state.mockup_selections = []
+    if 'mockup_ids' not in st.session_state:
+        st.session_state.mockup_ids = []
+
     # Color to hex mapping
     COLOR_HEX_MAP = {
         "Black": "#000000",
@@ -119,11 +125,19 @@ elif st.session_state.get("authentication_status") is True:
 
     # Function to update SKU based on current item name, colors, and sizes
     def update_sku():
-        st.session_state.sku = generate_product_sku(
-            st.session_state.item_name, 
-            st.session_state.colors, 
-            st.session_state.sizes
-        )
+        try:
+            st.session_state.sku = generate_product_sku(
+                st.session_state.item_name, 
+                st.session_state.colors, 
+                st.session_state.sizes
+            )
+        except Exception as e:
+            # If we can't update the session state now, we'll catch the exception
+            # and let the value be updated the next time the app refreshes
+            print(f"Couldn't update SKU: {e}")
+            # Store values that will be used to update SKU on next refresh
+            if 'pending_sku_update' not in st.session_state:
+                st.session_state.pending_sku_update = True
 
     # Function to generate random SKU
     def generate_random_sku(prefix="", length=8):
@@ -153,21 +167,32 @@ elif st.session_state.get("authentication_status") is True:
             st.session_state.colors.append(COLOR_HEX_MAP.get(color, "#FFFFFF"))
         # Update main product SKU after colors change
         update_sku()
+        # Don't reset mockup selections when adding colors
 
     # Function to update item name and mockup ID when selection changes
     def update_mockup_selection():
-        selected_mockup = st.session_state.mockup_selection
-        if selected_mockup and selected_mockup != "":
-            st.session_state.mockup_id = mockup_id_map.get(selected_mockup, "")
-            # Set item name to match the selected smart object
-            st.session_state.item_name = selected_mockup.split(",")[0] if "," in selected_mockup else selected_mockup
-            # Update SKU when mockup selection changes
-            update_sku()
-        else:
-            st.session_state.mockup_id = ""
-            st.session_state.item_name = ""
-        print(f"Updated mockup_id: {st.session_state.mockup_id}")  # Debug
-        print(f"Updated item_name: {st.session_state.item_name}")  # Debug
+        """Update mockup IDs and related data when selection changes"""
+        # Store all selected mockups
+        if "preview_mockup_selection" in st.session_state:
+            st.session_state.mockup_selections = st.session_state.preview_mockup_selection
+            
+            # Update mockup IDs for all selected mockups
+            st.session_state.mockup_ids = []
+            for mockup in st.session_state.mockup_selections:
+                if mockup and mockup != "":
+                    st.session_state.mockup_ids.append(mockup_id_map.get(mockup, ""))
+            
+            # For backward compatibility, store the first selection as the primary mockup
+            if st.session_state.mockup_selections:
+                st.session_state.mockup_selection = st.session_state.mockup_selections[0]
+                # Set item name to match the selected smart object
+                st.session_state.item_name = st.session_state.mockup_selection.split(",")[0] if "," in st.session_state.mockup_selection else st.session_state.mockup_selection
+                # Update SKU when mockup selection changes
+                update_sku()
+            else:
+                st.session_state.mockup_selection = ""
+                st.session_state.item_name = ""
+                st.session_state.mockup_id = ""
 
     # Function to update item name and SKU
     def update_item_name():
@@ -206,27 +231,40 @@ elif st.session_state.get("authentication_status") is True:
         selection_container = st.container()
         
         with selection_container:
-            # Create a selectbox outside the form to handle the selection change immediately
-            st.selectbox(
-                "Select Mockup",
+            # Ensure mockup_selections is properly processed before reading
+            if 'mockup_selections' in st.session_state:
+                # Force mockup_selections to be a list if it isn't already
+                if not isinstance(st.session_state.mockup_selections, list):
+                    if isinstance(st.session_state.mockup_selections, str):
+                        st.session_state.mockup_selections = [st.session_state.mockup_selections] if st.session_state.mockup_selections else []
+                    else:
+                        try:
+                            st.session_state.mockup_selections = list(st.session_state.mockup_selections)
+                        except:
+                            st.session_state.mockup_selections = []
+            
+            # Ensure preview_mockup_selection contains only valid options
+            if 'preview_mockup_selection' in st.session_state:
+                # Filter to ensure only valid options are in the selection
+                if isinstance(st.session_state.preview_mockup_selection, list):
+                    st.session_state.preview_mockup_selection = [
+                        option for option in st.session_state.preview_mockup_selection 
+                        if option in mockup_options
+                    ]
+                else:
+                    # Reset if not a list
+                    st.session_state.preview_mockup_selection = []
+            else:
+                # Initialize if not present
+                st.session_state.preview_mockup_selection = []
+            
+            # Create a multiselect WITHOUT the default parameter to avoid the error
+            st.multiselect(
+                "Select Mockups (Choose multiple)",
                 options=mockup_options,
-                index=mockup_options.index(st.session_state.mockup_selection) if st.session_state.mockup_selection in mockup_options else 0,
                 key="preview_mockup_selection",
                 on_change=update_mockup_selection
             )
-            
-            # Update the session state to sync the selection
-            if "preview_mockup_selection" in st.session_state:
-                st.session_state.mockup_selection = st.session_state.preview_mockup_selection
-                
-                # Update mockup ID
-                if st.session_state.mockup_selection and st.session_state.mockup_selection != "":
-                    st.session_state.mockup_id = mockup_id_map.get(st.session_state.mockup_selection, "")
-                    # Set item name to match the selected smart object
-                    st.session_state.item_name = st.session_state.mockup_selection.split(",")[0] if "," in st.session_state.mockup_selection else st.session_state.mockup_selection
-                else:
-                    st.session_state.mockup_id = ""
-                    st.session_state.item_name = ""
 
     # Page configuration
     st.title("Add Blank Item")
@@ -264,7 +302,7 @@ elif st.session_state.get("authentication_status") is True:
 
         # Color Section
         st.subheader("Color")
-        # Use multiselect for colors
+        # Use multiselect for colors 
         st.multiselect(
             "Select Colors",
             options=list(COLOR_HEX_MAP.keys()),
@@ -296,14 +334,19 @@ elif st.session_state.get("authentication_status") is True:
             st.text_area("Selected Colors", value="\n".join(st.session_state.colors), height=100)
 
         # Mockup ID display
-        st.subheader("Mockup Information")
-        st.text_input(
-            "Mockup UUID",
-            value=st.session_state.mockup_id,
-            key="mockup_id_display",
-            disabled=True
-        )
-
+        st.subheader("Selected Mockups")
+        if st.session_state.mockup_selections:
+            for i, mockup in enumerate(st.session_state.mockup_selections):
+                mockup_id = mockup_id_map.get(mockup, "")
+                st.text_input(
+                    f"Mockup {i+1}: {mockup}",
+                    value=mockup_id,
+                    key=f"mockup_id_display_{i}",
+                    disabled=True
+                )
+        else:
+            st.info("No mockups selected.")
+    
         # Submit button
         submit_button = st.form_submit_button(label="Save")
 
@@ -318,13 +361,31 @@ elif st.session_state.get("authentication_status") is True:
         # Check if mockup_id needs updating based on current selection
         current_mockup_id = mockup_id_map.get(st.session_state.mockup_selection, "")
         if current_mockup_id != st.session_state.mockup_id:
-            st.session_state.mockup_id = current_mockup_id
-            # Update item name to match the selected smart object
-            st.session_state.item_name = (st.session_state.mockup_selection.split(",")[0] 
-                                        if "," in st.session_state.mockup_selection 
-                                        else st.session_state.mockup_selection)
-            # Update SKU when mockup/item selection changes
-            update_sku()
+            try:
+                st.session_state.mockup_id = current_mockup_id
+                # Update item name to match the selected smart object
+                st.session_state.item_name = (st.session_state.mockup_selection.split(",")[0] 
+                                          if "," in st.session_state.mockup_selection 
+                                          else st.session_state.mockup_selection)
+                # Update SKU when mockup/item selection changes
+                update_sku()
+            except Exception as e:
+                print(f"Error updating mockup selection: {e}")
+                if 'pending_sku_update' not in st.session_state:
+                    st.session_state.pending_sku_update = True
+
+    # Check if there's a pending SKU update from the previous run
+    # Do this early in the code, before any widgets are created
+    if 'pending_sku_update' in st.session_state and st.session_state.pending_sku_update:
+        try:
+            st.session_state.sku = generate_product_sku(
+                st.session_state.item_name,
+                st.session_state.colors,
+                st.session_state.sizes
+            )
+            st.session_state.pending_sku_update = False
+        except Exception as e:
+            print(f"Still couldn't update SKU: {e}")
 
     # Process form submission
     if submit_button:
@@ -338,39 +399,49 @@ elif st.session_state.get("authentication_status") is True:
         if not item_sku:
             item_sku = generate_product_sku(st.session_state.item_name, st.session_state.colors, st.session_state.sizes)
         
-        # Get smart object UUID from the selected mockup
-        smart_object_uuid = None
-        selected_mockup_id = st.session_state.mockup_id
-        selected_mockup_name = st.session_state.item_name
+        # Get all mockup IDs and smart object UUIDs
+        selected_mockup_ids = []
+        smart_object_uuids = []
         
-        # Look through mockups to find the selected one and extract smart object UUID
-        for mockup in mockups:
-            mockup_id = mockup.get('id', mockup.get('uuid', ''))
-            if mockup_id == selected_mockup_id:
-                # Find the smart object with matching name
-                for so in mockup.get('smart_objects', []):
-                    if 'Background' not in so.get('name', '') and so.get('name', '') == selected_mockup_name:
-                        smart_object_uuid = so.get('uuid', None)
-                        print(f"Found smart object UUID: {smart_object_uuid}")  # Debug
-                        break
-                break
+        for mockup_selection in st.session_state.mockup_selections:
+            selected_mockup_id = mockup_id_map.get(mockup_selection, "")
+            selected_mockup_name = mockup_selection.split(",")[0] if "," in mockup_selection else mockup_selection
+            
+            # Look through mockups to find the selected one and extract smart object UUID
+            for mockup in mockups:
+                mockup_id = mockup.get('id', mockup.get('uuid', ''))
+                if mockup_id == selected_mockup_id:
+                    # Find the smart object with matching name
+                    for so in mockup.get('smart_objects', []):
+                        if 'Background' not in so.get('name', '') and so.get('name', '') == selected_mockup_name:
+                            smart_object_uuids.append(so.get('uuid', None))
+                            break
+                    break
+            
+            selected_mockup_ids.append(selected_mockup_id)
         
-        # Prepare product data
+        # Store multiple mockups as JSON strings
+        mockup_ids_json = json.dumps(selected_mockup_ids)
+        smart_object_uuids_json = json.dumps(smart_object_uuids)
+        
+        # Prepare product data with multiple mockup information
         product_data = {
-            'product_name': st.session_state.item_name,  # Use the synced item name
-            'item_sku': item_sku,  # Use local variable instead of modifying session state
+            'product_name': st.session_state.item_name,
+            'item_sku': item_sku,
             'parent_child': 'Parent',
             'parent_sku': None,
             'size': st.session_state.size_name if not st.session_state.sizes else json.dumps(st.session_state.sizes),
             'color': st.session_state.color_name if not st.session_state.colors else json.dumps(st.session_state.colors),
-            'mockup_id': st.session_state.mockup_id,
+            'mockup_id': selected_mockup_ids[0] if selected_mockup_ids else None,  # Primary mockup ID for backward compatibility
+            'mockup_ids': mockup_ids_json,  # Store all selected mockup IDs
             'image_url': None,
             'marketplace_title': None,
-            'category': st.session_state.mockup_selection,  # Use the selected mockup value as category
+            'category': ", ".join(st.session_state.mockup_selections),  # Use all selected mockups for category
             'tax_class': None,
             'quantity': 0,
             'price': 0.0,
-            'smart_object_uuid': smart_object_uuid,  # Include the smart object UUID
+            'smart_object_uuid': smart_object_uuids[0] if smart_object_uuids else None,  # Primary smart object UUID
+            'smart_object_uuids': smart_object_uuids_json,  # Store all smart object UUIDs
         }
 
         # Validate required fields
