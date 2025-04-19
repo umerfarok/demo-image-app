@@ -260,7 +260,7 @@ class Database:
             color TEXT NULL,
             image_url TEXT NULL,
             marketplace_title TEXT NULL,
-            category VARCHAR(100) NULL,
+            category VARCHAR(1000) NULL,
             tax_class VARCHAR(50) NULL,
             quantity INT NOT NULL DEFAULT 0,
             price DECIMAL(10, 2) NOT NULL DEFAULT 0.00,

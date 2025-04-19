@@ -211,19 +211,27 @@ elif st.session_state.get("authentication_status") is True:
 
     for mockup in mockups:
         print(f"Processing mockup: {mockup}")  # Debug
+        mockup_name = mockup.get('name', 'Unnamed Mockup')
         smart_objects_info = []
         for so in mockup.get('smart_objects', []):
             if 'Background' not in so.get('name', ''):  # Skip background objects
-                smart_objects_info.append(so.get('name', 'Unnamed'))
+                # Create option with both smart object name and mockup name
+                so_name = so.get('name', 'Unnamed')
+                option_text = f"{so_name} - {mockup_name}"
+                smart_objects_info.append(option_text)
+                mockup_options.append(option_text)
+                
+                # Store the mapping between option text and mockup ID
+                mockup_id = mockup.get('id', mockup.get('uuid', ''))  # Try 'id' first, then 'uuid'
+                print(f"Mapping '{option_text}' to ID: {mockup_id}")
+                mockup_id_map[option_text] = mockup_id
         
-        smart_objects_text = ", ".join(smart_objects_info) if smart_objects_info else "No printable objects"
-        option_text = f"{smart_objects_text}"
-        mockup_options.append(option_text)
-        
-        # Store the mapping between option text and mockup ID
-        mockup_id = mockup.get('id', mockup.get('uuid', ''))  # Try 'id' first, then 'uuid'
-        print(f"Mapping '{option_text}' to ID: {mockup_id}")
-        mockup_id_map[option_text] = mockup_id
+        # If no smart objects were found, add a default option
+        if not smart_objects_info and 'Background' not in mockup_name:
+            option_text = f"No printable objects - {mockup_name}"
+            mockup_options.append(option_text)
+            mockup_id = mockup.get('id', mockup.get('uuid', ''))
+            mockup_id_map[option_text] = mockup_id
 
     # Create a function to handle mockup selection outside the form
     def handle_mockup_selection():
@@ -405,7 +413,11 @@ elif st.session_state.get("authentication_status") is True:
         
         for mockup_selection in st.session_state.mockup_selections:
             selected_mockup_id = mockup_id_map.get(mockup_selection, "")
-            selected_mockup_name = mockup_selection.split(",")[0] if "," in mockup_selection else mockup_selection
+            # Extract the smart object name from the format "SmartObject - MockupName"
+            if " - " in mockup_selection:
+                selected_mockup_name = mockup_selection.split(" - ")[0]
+            else:
+                selected_mockup_name = mockup_selection.split(",")[0] if "," in mockup_selection else mockup_selection
             
             # Look through mockups to find the selected one and extract smart object UUID
             for mockup in mockups:
