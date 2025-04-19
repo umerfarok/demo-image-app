@@ -226,81 +226,19 @@ elif st.session_state.get("authentication_status") is True:
                     mockup_data = json.loads(image_url)
                     # Extract all URLs from the mockup data
                     if isinstance(mockup_data, dict) and len(mockup_data) > 0:
-                        # Get a list of color names for the dropdown
-                        color_options = []
-                        for color_code in mockup_data.keys():
-                            color_name = hex_to_color_name(color_code) or color_code.replace("#", "Hex ")
-                            color_options.append((color_name, color_code))
-                        
-                        # Create a nice dropdown to select colors
-                        if color_options:
-                            selected_color_name = st.selectbox(
-                                "Select Color Variant",
-                                options=[name for name, _ in color_options],
-                                key=f"color_selector_{product_id}"
-                            )
-                            
-                            # Find the selected color code
-                            selected_color_code = next((code for name, code in color_options if name == selected_color_name), None)
-                            
-                            if selected_color_code and selected_color_code in mockup_data:
-                                # Show the mockup for the selected color
-                                st.image(mockup_data[selected_color_code], 
-                                        caption=f"Mockup - {selected_color_name}", 
-                                        use_container_width=True)
-                        else:
-                            st.info("No color variants found in the mockup data.")
-                            
-                        # Add an expander to show all variants at once
-                        with st.expander("View All Color Variants"):
-                            # Calculate number of columns based on number of colors
-                            num_cols = min(3, len(mockup_data))
-                            if num_cols > 0:
-                                cols = st.columns(num_cols)
-                                
-                                for i, (color_code, url) in enumerate(mockup_data.items()):
-                                    with cols[i % num_cols]:
-                                        color_name = hex_to_color_name(color_code) or color_code.replace("#", "")
-                                        st.image(url, caption=f"{color_name}", use_container_width=True)
-                                        
-                                        # Add a download button for each mockup
-                                        download_key = f"download_{product_id}_{color_code}"
-                                        if st.button(f"Download {color_name}", key=download_key):
-                                            # Get the image data for download
-                                            try:
-                                                response = requests.get(url)
-                                                if response.status_code == 200:
-                                                    # Generate filename for download
-                                                    filename = f"{product['product_name']}_{color_name}.png"
-                                                    filename = filename.replace(" ", "_").lower()
-                                                    
-                                                    # Create download button with the image data
-                                                    st.download_button(
-                                                        label=f"Save {color_name} Image",
-                                                        data=response.content,
-                                                        file_name=filename,
-                                                        mime="image/png",
-                                                        key=f"{download_key}_download"
-                                                    )
-                                            except Exception as e:
-                                                st.error(f"Error preparing download: {e}")
-                                    
+                        # Display all mockups for different colors
+                        st.write("Available mockups:")
+                        for color_code, mockup_url in mockup_data.items():
+                            color_name = color_code.replace("#", "")  # Remove # from hex code for display
+                            st.image(mockup_url, caption=f"Mockup - {color_name}", width=300)
                     elif isinstance(mockup_data, list) and len(mockup_data) > 0:
-                        # List format - show as gallery
-                        num_cols = min(3, len(mockup_data))
-                        cols = st.columns(num_cols)
                         for i, url in enumerate(mockup_data):
-                            with cols[i % num_cols]:
-                                st.image(url, caption=f"Mockup {i+1}", use_container_width=True)
-                    else:
-                        st.warning("No valid mockup data found.")
+                            st.image(url, caption=f"Mockup {i+1}", width=300)
                 else:
-                    # Single URL - show directly
-                    st.image(image_url, caption=f"Mockup for {product['product_name']}", use_container_width=True)
+                    st.image(image_url, caption=f"Mockup for {product['product_name']}", width=300)
             except Exception as e:
-                st.error(f"Error parsing mockup URLs: {e}")
-                st.markdown("📷 *Mockup images could not be loaded*")
-                st.code(str(image_url))  # Show the raw value for debugging
+                st.error(f"Error parsing mockup URL: {e}")
+                st.markdown("📷 *Mockup image could not be loaded*")
         else:
             # Use default image fields and logic for regular products
             image_field = 'image_url' if product_type == "Regular" else 'original_design_url'
@@ -308,56 +246,6 @@ elif st.session_state.get("authentication_status") is True:
                 st.image(product[image_field], caption=f"Image for {product['product_name']}", width=300)
             else:
                 st.markdown("📷 *No image available*")
-
-        # If this is a Generated product, check if it has multiple mockup templates
-        if product_type == "Generated" and 'mockup_id' in product and product['mockup_id']:
-            # Query for other products with the same original design but different mockup templates
-            related_products = None
-            try:
-                if 'original_design_url' in product and product['original_design_url']:
-                    # Find products with the same original design URL but different mockup IDs
-                    related_products = db.get_related_products_by_design(product['original_design_url'], exclude_id=product_id)
-            except Exception as e:
-                st.error(f"Error finding related mockup templates: {e}")
-            
-            # If we found related products (other templates), display them
-            if related_products and not related_products.empty:
-                st.markdown("---")
-                st.subheader("Other Mockup Templates")
-                st.info(f"This design is available in {len(related_products) + 1} different mockup templates.")
-                
-                # Show thumbnails of other templates
-                cols = st.columns(min(4, len(related_products)))
-                
-                for i, (_, related) in enumerate(related_products.iterrows()):
-                    with cols[i % len(cols)]:
-                        # Try to get a thumbnail from mockup_urls
-                        thumbnail_url = None
-                        if 'mockup_urls' in related and related['mockup_urls']:
-                            try:
-                                mockup_data = json.loads(related['mockup_urls'])
-                                if isinstance(mockup_data, dict) and len(mockup_data) > 0:
-                                    # Just use the first URL as thumbnail
-                                    thumbnail_url = next(iter(mockup_data.values()))
-                            except:
-                                pass
-                        
-                        # If we couldn't get a thumbnail, use original design
-                        if not thumbnail_url and 'original_design_url' in related:
-                            thumbnail_url = related['original_design_url']
-                        
-                        # Display the thumbnail
-                        if thumbnail_url:
-                            st.image(thumbnail_url, width=150, caption=f"{related['product_name']}")
-                        else:
-                            st.write(f"{related['product_name']}")
-                        
-                        # Add view button
-                        if st.button(f"View", key=f"view_related_{related['id']}"):
-                            # Set the view state to this product
-                            st.session_state.view_product_id = int(related['id'])
-                            st.session_state.view_product_type = "Generated"
-                            st.rerun()
 
     else:
         # Add search and filter functionality - Only shown when not viewing a single product
@@ -450,21 +338,6 @@ elif st.session_state.get("authentication_status") is True:
 
                     # Create a new DataFrame for the CSV export with properly formatted data
                     export_rows = []
-                    
-                    for idx, row in filtered_df.iterrows():
-                        product_row = row.copy()
-                        
-                        # For parent products, set size and color to blank
-                        if 'parent_child' in product_row and product_row['parent_child'] == 'Parent':
-                            product_row['size'] = ''
-                            product_row['colour'] = ''
-                            product_row['color'] = ''
-                            
-                            # For generated products with mockups, extract them even for parent records
-                            if product_row.get('product_type') == 'Generated' and 'mockup_urls' in product_row and product_row['mockup_urls']:
-                                color_rows = process_mockups_by_color(product_row.to_dict())
-                                export_rows.extend(color_rows)
-                            else:
                     
                     for idx, row in filtered_df.iterrows():
                         product_row = row.copy()
@@ -725,6 +598,21 @@ elif st.session_state.get("authentication_status") is True:
                                             mockup_data = json.loads(mockup_urls)
                                             
                                             # Only process dict format mockup data
+                                            if isinstance(mockup_data, dict):
+                                                # Get the color value (could be in different formats)
+                                                color_val = row['color']
+                                                
+                                                # Try multiple formats for matching colors
+                                                matched = False
+                                                
+                                                # 1. Try direct match
+                                                if color_val in mockup_data:
+                                                    standardized_df.at[idx, 'image_url'] = mockup_data[color_val]
+                                                    matched = True
+                                                    
+                                                # 2. Try with # prefix
+                                                if not matched and not color_val.startswith('#'):
+                                                    hex_color = f"#{color_val}"
                                                     if hex_color in mockup_data:
                                                         standardized_df.at[idx, 'image_url'] = mockup_data[hex_color]
                                                         matched = True
@@ -800,6 +688,65 @@ elif st.session_state.get("authentication_status") is True:
             if 'quantity' in filtered_df.columns:
                 # Convert quantity to integer with error handling
                 filtered_df['quantity'] = pd.to_numeric(filtered_df['quantity'], errors='coerce').fillna(0).astype(int)
+                
+            # Expand products with multiple mockup colors into separate rows
+            expanded_rows = []
+            for idx, row in filtered_df.iterrows():
+                if row.get('product_type') == 'Generated' and 'mockup_urls' in row and row['mockup_urls']:
+                    try:
+                        # Parse mockup_urls JSON
+                        mockup_data = row['mockup_urls']
+                        if isinstance(mockup_data, str) and (mockup_data.startswith('{') or mockup_data.startswith('[')):
+                            mockup_json = json.loads(mockup_data)
+                            
+                            if isinstance(mockup_json, dict) and len(mockup_json) > 0:
+                                # Create a separate row for each color
+                                for color_code, mockup_url in mockup_json.items():
+                                    new_row = row.copy()
+                                    friendly_color = hex_to_color_name(color_code)
+                                    
+                                    # Add color-specific information to row
+                                    new_row['current_color'] = color_code
+                                    new_row['color_name'] = friendly_color
+                                    new_row['current_mockup_url'] = mockup_url
+                                    
+                                    # Also expand for sizes if available
+                                    if 'size' in row and row['size']:
+                                        try:
+                                            size_data = row['size']
+                                            if isinstance(size_data, str) and (size_data.startswith('[') or size_data.startswith('{')):
+                                                size_json = json.loads(size_data)
+                                                if isinstance(size_json, list) and len(size_json) > 0:
+                                                    for size in size_json:
+                                                        size_row = new_row.copy()
+                                                        size_value = size
+                                                        if isinstance(size, dict) and 'name' in size:
+                                                            size_value = size['name']
+                                                        size_row['current_size'] = size_value
+                                                        expanded_rows.append(size_row)
+                                                    continue  # Skip adding the non-sized row
+                                        except Exception as e:
+                                            print(f"Error processing sizes: {e}")
+                                    
+                                    expanded_rows.append(new_row)
+                                continue  # Skip adding the original row
+                            elif isinstance(mockup_json, list) and len(mockup_json) > 0:
+                                # For array format, create a separate row for each mockup
+                                for i, mockup_url in enumerate(mockup_json):
+                                    new_row = row.copy()
+                                    new_row['current_mockup_url'] = mockup_url
+                                    new_row['mockup_variant'] = i + 1
+                                    expanded_rows.append(new_row)
+                                continue  # Skip adding the original row
+                    except Exception as e:
+                        st.error(f"Error parsing mockup URLs: {e}")
+                
+                # Add original row if not expanded
+                expanded_rows.append(row)
+                
+            # Replace filtered_df with expanded version
+            if expanded_rows:
+                filtered_df = pd.DataFrame(expanded_rows)
 
         # Search filter
         if search_term:
@@ -831,64 +778,12 @@ elif st.session_state.get("authentication_status") is True:
             if st.session_state.current_page < 1:
                 st.session_state.current_page = 1
             
-            # Create a temporary expanded dataframe to show color variants as separate rows
-            expanded_products = []
-            
-            for idx, row in filtered_df.iterrows():
-                product_id = row['id']
-                product_name = row['product_name']
-                product_type = row['product_type']
-                
-                # Check if this product has mockup_urls with multiple color variants
-                if product_type == 'Generated' and 'mockup_urls' in row and row['mockup_urls']:
-                    try:
-                        # Parse the mockup_urls JSON
-                        mockup_data = json.loads(row['mockup_urls']) if isinstance(row['mockup_urls'], str) else row['mockup_urls']
-                        
-                        if isinstance(mockup_data, dict) and len(mockup_data) > 0:
-                            # Create a separate row for each color variant
-                            for color_hex, image_url in mockup_data.items():
-                                # Create a copy of the row for this color variant
-                                color_row = row.copy()
-                                
-                                # Add extra fields for display
-                                color_name = hex_to_color_name(color_hex)
-                                color_row['display_color'] = color_name or color_hex
-                                color_row['display_image_url'] = image_url
-                                color_row['is_color_variant'] = True
-                                color_row['color_hex'] = color_hex
-                                
-                                expanded_products.append(color_row)
-                        else:
-                            # No color variants, just add the original row
-                            row['display_image_url'] = row.get('image_url') or row.get('original_design_url')
-                            row['is_color_variant'] = False
-                            expanded_products.append(row)
-                    except Exception as e:
-                        # Error parsing mockup_urls, just add the original row
-                        print(f"Error parsing mockup_urls for product {product_id}: {e}")
-                        row['display_image_url'] = row.get('image_url') or row.get('original_design_url')
-                        row['is_color_variant'] = False
-                        expanded_products.append(row)
-                else:
-                    # Regular product or no mockup_urls, just add the original row
-                    row['display_image_url'] = row.get('image_url') or row.get('original_design_url') 
-                    row['is_color_variant'] = False
-                    expanded_products.append(row)
-            
-            # Create expanded dataframe with color variants
-            expanded_df = pd.DataFrame(expanded_products)
-            
-            # Update pagination for the expanded dataframe
-            total_items = len(expanded_df)
-            total_pages = (total_items + st.session_state.items_per_page - 1) // st.session_state.items_per_page
-            
-            # Recalculate start and end indices
+            # Calculate start and end indices for current page
             start_idx = (st.session_state.current_page - 1) * st.session_state.items_per_page
             end_idx = min(start_idx + st.session_state.items_per_page, total_items)
             
-            # Get products for the current page from the expanded dataframe
-            page_df = expanded_df.iloc[start_idx:end_idx]
+            # Get products for the current page
+            page_df = filtered_df.iloc[start_idx:end_idx]
             
             # Display custom product table with image, title, and action columns
             st.subheader("Products")
@@ -913,53 +808,81 @@ elif st.session_state.get("authentication_status") is True:
                 product_name = row['product_name']
                 product_type = row['product_type']
                 
-                # Debug info
+                # Print each product's data for debugging
                 print(f"PRODUCT DATA: {product_type} - {product_id} - {product_name}")
+                print(f"PRODUCT ROW DATA: {row}")
                 
                 cols = st.columns([1, 3, 1, 1])
                 
                 # Image column
                 with cols[0]:
-                    display_image_url = row['display_image_url']
-                    if display_image_url:
-                        # Show color variant info if this is a color variant
-                        if row.get('is_color_variant', False):
-                            color_name = row.get('display_color', 'Unknown')
-                            color_hex = row.get('color_hex', '#CCCCCC')
-                            
-                            # Display color information with the image
-                            st.image(display_image_url, width=70)
-                            st.markdown(f"""
-                                <div style="display: flex; align-items: center; margin-top: -10px;">
-                                    <div style="width: 15px; height: 15px; background-color: {color_hex}; border-radius: 50%; margin-right: 5px;"></div>
-                                    <span style="font-size: 0.8em;">{color_name}</span>
-                                </div>
-                            """, unsafe_allow_html=True)
+                    # For generated products, use mockup_urls instead of original_design_url
+                    if product_type == 'Generated' and 'mockup_urls' in row and row['mockup_urls']:
+                        image_field = 'mockup_urls'
+                        
+                        # If we've already expanded this row by color, use the specific mockup URL
+                        if 'current_mockup_url' in row and row['current_mockup_url']:
+                            st.image(row['current_mockup_url'], width=70, 
+                                     caption=f"{row['color_name'] if 'color_name' in row else ''}")
                         else:
-                            # Regular product display
-                            st.image(display_image_url, width=70)
+                            # Use existing logic for rows that haven't been expanded
+                            try:
+                                import json
+                                if isinstance(row[image_field], str) and (row[image_field].startswith('[') or row[image_field].startswith('{')):
+                                    mockup_data = json.loads(row[image_field])
+                                    
+                                    if isinstance(mockup_data, dict) and len(mockup_data) > 0:
+                                        # Get list of available colors
+                                        colors = list(mockup_data.keys())
+                                        
+                                        # Use the row index to select which color to show
+                                        color_idx = idx % len(colors)
+                                        selected_color = colors[color_idx]
+                                        
+                                        # Get URL for selected color
+                                        url = mockup_data[selected_color]
+                                        
+                                        # Convert to user-friendly color name
+                                        friendly_color = hex_to_color_name(selected_color)
+                                        
+                                        # Display just one image with color info
+                                        st.image(url, width=70, caption=f"{friendly_color}")
+                                    elif isinstance(mockup_data, list) and len(mockup_data) > 0:
+                                        # For list type mockups, select one based on index
+                                        list_idx = idx % len(mockup_data)
+                                        st.image(mockup_data[list_idx], width=70)
+                                else:
+                                    st.image(row[image_field], width=70)
+                            except Exception as e:
+                                st.error(f"Error parsing mockup URL: {e}")
+                                st.markdown("📷 *Invalid mockup data*")
                     else:
-                        st.markdown("📷")
+                        # Use image_url for regular products, original_design_url as fallback for generated products
+                        image_field = 'image_url' if product_type == 'Regular' else 'original_design_url'
+                        
+                        if image_field in row and row[image_field]:
+                            image_url = row[image_field]
+                            # Ensure image_url is a valid string before displaying
+                            if image_url and isinstance(image_url, str):
+                                st.image(image_url, width=70)
+                            else:
+                                st.markdown("📷 *Invalid image URL*")
+                        else:
+                            st.markdown("📷 *No image available*")
                 
                 # Product name column
                 with cols[1]:
-                    # For color variants, show color info along with product name
-                    if row.get('is_color_variant', False):
-                        color_name = row.get('display_color', 'Unknown')
-                        st.write(f"{product_name} - {color_name}")
-                    else:
-                        st.write(product_name)
+                    product_name_display = product_name
+                    # Show color name with product name if available
+                    if 'color_name' in row and row['color_name']:
+                        product_name_display = f"{product_name} - {row['color_name']}"
+                    # Add size if available
+                    if 'current_size' in row and row['current_size']:
+                        product_name_display = f"{product_name_display} (Size: {row['current_size']})"
+                    elif 'mockup_variant' in row:
+                        product_name_display = f"{product_name_display} (Variant {row['mockup_variant']})"
+                    st.write(product_name_display)
                     
-                    # Show sizes if available
-                    if 'size' in row and row['size']:
-                        try:
-                            sizes = json.loads(row['size']) if isinstance(row['size'], str) else row['size']
-                            if isinstance(sizes, list) and sizes:
-                                size_text = ', '.join([s['name'] if isinstance(s, dict) and 'name' in s else str(s) for s in sizes])
-                                st.markdown(f"<small>Sizes: {size_text}</small>", unsafe_allow_html=True)
-                        except:
-                            pass
-                
                 # Product type column
                 with cols[2]:
                     st.write(product_type)
@@ -969,26 +892,30 @@ elif st.session_state.get("authentication_status") is True:
                     view_col, delete_col = st.columns(2)
                     
                     with view_col:
-                        # Use unique key for each row including color variant
-                        view_key = f"view_{product_type}_{product_id}"
-                        if row.get('is_color_variant', False):
-                            view_key += f"_{row.get('color_hex', '').replace('#', '')}"
-                            
-                        if st.button("View", key=view_key):
+                        # Create a unique key by incorporating color and size information if available
+                        button_key_suffix = ""
+                        if 'current_color' in row and row['current_color']:
+                            # Check if current_color is a string before applying replace
+                            if isinstance(row['current_color'], str):
+                                button_key_suffix = f"_{row['current_color'].replace('#', '')}"
+                            else:
+                                # Handle the case when current_color is not a string (like float)
+                                button_key_suffix = f"_{str(row['current_color'])}"
+                        if 'current_size' in row and row['current_size']:
+                            # Check if current_size is a string before using it
+                            size_str = str(row['current_size']) if row['current_size'] else ""
+                            button_key_suffix = f"{button_key_suffix}_size_{size_str}"
+                        elif 'mockup_variant' in row:
+                            button_key_suffix = f"{button_key_suffix}_variant_{row['mockup_variant']}"
+                        
+                        if st.button("View", key=f"view_{product_type}_{product_id}{button_key_suffix}"):
                             st.session_state.view_product_id = product_id
                             st.session_state.view_product_type = product_type
-                            # For color variants, remember which color was selected
-                            if row.get('is_color_variant', False):
-                                st.session_state.view_product_color = row.get('color_hex')
                             st.rerun()
                     
                     with delete_col:
-                        # Use unique key for delete button
-                        delete_key = f"delete_{product_type}_{product_id}"
-                        if row.get('is_color_variant', False):
-                            delete_key += f"_{row.get('color_hex', '').replace('#', '')}"
-                            
-                        if st.button("Delete", key=delete_key):
+                        # Apply the same approach to the delete button key
+                        if st.button("Delete", key=f"delete_{product_type}_{product_id}{button_key_suffix}"):
                             st.session_state.confirm_delete = True
                             st.session_state.product_to_delete = product_id
                             st.session_state.product_type = product_type
@@ -1055,3 +982,4 @@ elif st.session_state.get("authentication_status") is True:
             
             # Display page information
             st.write(f"Page {st.session_state.current_page} of {total_pages} | Showing {start_idx+1}-{end_idx} of {total_items} products")
+

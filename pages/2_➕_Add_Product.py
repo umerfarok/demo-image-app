@@ -125,11 +125,19 @@ elif st.session_state.get("authentication_status") is True:
 
     # Function to update SKU based on current item name, colors, and sizes
     def update_sku():
-        st.session_state.sku = generate_product_sku(
-            st.session_state.item_name, 
-            st.session_state.colors, 
-            st.session_state.sizes
-        )
+        try:
+            st.session_state.sku = generate_product_sku(
+                st.session_state.item_name, 
+                st.session_state.colors, 
+                st.session_state.sizes
+            )
+        except Exception as e:
+            # If we can't update the session state now, we'll catch the exception
+            # and let the value be updated the next time the app refreshes
+            print(f"Couldn't update SKU: {e}")
+            # Store values that will be used to update SKU on next refresh
+            if 'pending_sku_update' not in st.session_state:
+                st.session_state.pending_sku_update = True
 
     # Function to generate random SKU
     def generate_random_sku(prefix="", length=8):
@@ -223,17 +231,37 @@ elif st.session_state.get("authentication_status") is True:
         selection_container = st.container()
         
         with selection_container:
-            # Get current selections for default value
-            current_selections = []
-            if "mockup_selections" in st.session_state and st.session_state.mockup_selections:
-                # Filter to include only valid options that exist in mockup_options
-                current_selections = [m for m in st.session_state.mockup_selections if m in mockup_options]
+            # Ensure mockup_selections is properly processed before reading
+            if 'mockup_selections' in st.session_state:
+                # Force mockup_selections to be a list if it isn't already
+                if not isinstance(st.session_state.mockup_selections, list):
+                    if isinstance(st.session_state.mockup_selections, str):
+                        st.session_state.mockup_selections = [st.session_state.mockup_selections] if st.session_state.mockup_selections else []
+                    else:
+                        try:
+                            st.session_state.mockup_selections = list(st.session_state.mockup_selections)
+                        except:
+                            st.session_state.mockup_selections = []
             
-            # Create a multiselect with properly filtered default values
+            # Ensure preview_mockup_selection contains only valid options
+            if 'preview_mockup_selection' in st.session_state:
+                # Filter to ensure only valid options are in the selection
+                if isinstance(st.session_state.preview_mockup_selection, list):
+                    st.session_state.preview_mockup_selection = [
+                        option for option in st.session_state.preview_mockup_selection 
+                        if option in mockup_options
+                    ]
+                else:
+                    # Reset if not a list
+                    st.session_state.preview_mockup_selection = []
+            else:
+                # Initialize if not present
+                st.session_state.preview_mockup_selection = []
+            
+            # Create a multiselect WITHOUT the default parameter to avoid the error
             st.multiselect(
                 "Select Mockups (Choose multiple)",
                 options=mockup_options,
-                default=current_selections,  # Only include valid options
                 key="preview_mockup_selection",
                 on_change=update_mockup_selection
             )
@@ -318,7 +346,7 @@ elif st.session_state.get("authentication_status") is True:
                 )
         else:
             st.info("No mockups selected.")
-
+    
         # Submit button
         submit_button = st.form_submit_button(label="Save")
 
@@ -333,13 +361,31 @@ elif st.session_state.get("authentication_status") is True:
         # Check if mockup_id needs updating based on current selection
         current_mockup_id = mockup_id_map.get(st.session_state.mockup_selection, "")
         if current_mockup_id != st.session_state.mockup_id:
-            st.session_state.mockup_id = current_mockup_id
-            # Update item name to match the selected smart object
-            st.session_state.item_name = (st.session_state.mockup_selection.split(",")[0] 
-                                        if "," in st.session_state.mockup_selection 
-                                        else st.session_state.mockup_selection)
-            # Update SKU when mockup/item selection changes
-            update_sku()
+            try:
+                st.session_state.mockup_id = current_mockup_id
+                # Update item name to match the selected smart object
+                st.session_state.item_name = (st.session_state.mockup_selection.split(",")[0] 
+                                          if "," in st.session_state.mockup_selection 
+                                          else st.session_state.mockup_selection)
+                # Update SKU when mockup/item selection changes
+                update_sku()
+            except Exception as e:
+                print(f"Error updating mockup selection: {e}")
+                if 'pending_sku_update' not in st.session_state:
+                    st.session_state.pending_sku_update = True
+
+    # Check if there's a pending SKU update from the previous run
+    # Do this early in the code, before any widgets are created
+    if 'pending_sku_update' in st.session_state and st.session_state.pending_sku_update:
+        try:
+            st.session_state.sku = generate_product_sku(
+                st.session_state.item_name,
+                st.session_state.colors,
+                st.session_state.sizes
+            )
+            st.session_state.pending_sku_update = False
+        except Exception as e:
+            print(f"Still couldn't update SKU: {e}")
 
     # Process form submission
     if submit_button:
